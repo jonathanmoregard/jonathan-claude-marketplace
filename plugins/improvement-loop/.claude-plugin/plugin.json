@@ -1,0 +1,18 @@
+{
+  "name": "improvement-loop",
+  "description": "Daily Opus-powered review of chat logs that identifies behavior patterns (north star violations, wellbeing drift, automatable meta-work) and writes actionable improvement proposals. Includes setup wizard, interactive review skill, and secret scanning.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jonathan Moregard"
+  },
+  "repository": "",
+  "license": "MIT",
+  "keywords": [
+    "improvement",
+    "review",
+    "wellbeing",
+    "automation",
+    "self-improvement",
+    "habits"
+  ]
+}

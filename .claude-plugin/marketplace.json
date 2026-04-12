@@ -1,0 +1,10 @@
+{
+  "name": "jonathan-plugins",
+  "description": "Jonathan's personal Claude Code plugins",
+  "plugins": {
+    "improvement-loop": {
+      "version": "0.1.0",
+      "path": "plugins/improvement-loop"
+    }
+  }
+}
