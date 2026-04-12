@@ -1,11 +1,11 @@
 ---
 name: review-improvements-help
-description: "Explain how the Continuous Improvement Loop works — the daily review agent, proposals, and review workflow."
+description: "Explain how the Recursive Self-Improvement works — the daily review agent, proposals, and review workflow."
 ---
 
 # Improvement Loop Help
 
-Explain the Continuous Improvement Loop to the user. Cover:
+Explain the Recursive Self-Improvement to the user. Cover:
 
 ## What It Does
 
@@ -24,13 +24,13 @@ A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours.
 
 ## Commands
 
-- `/setup-improvement-loop` — configure your north star, goals, alignment signals, and schedule
+- `/setup-recursive-self-improvement` — configure your north star, goals, alignment signals, and schedule
 - `/review-improvements` — walk through pending proposals interactively
 - `/review-improvements-help` — this help text
 
 ## Configuration
 
-Your config lives at `~/.claude/improvement-loop-config.yml`. Re-run `/setup-improvement-loop` to update it.
+Your config lives at `~/.claude/recursive-self-improvement/config.yml`. Re-run `/setup-recursive-self-improvement` to update it.
 
 ## Security
 

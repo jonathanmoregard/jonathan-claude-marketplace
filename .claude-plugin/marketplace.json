@@ -9,13 +9,13 @@
   },
   "plugins": [
     {
-      "name": "improvement-loop",
+      "name": "recursive-self-improvement",
       "version": "0.1.0",
       "description": "Daily Opus-powered review of chat logs that identifies behavior patterns (north star violations, wellbeing drift, automatable meta-work) and writes actionable improvement proposals.",
       "author": {
         "name": "Jonathan Moregard"
       },
-      "source": "./plugins/improvement-loop"
+      "source": "./plugins/recursive-self-improvement"
     }
   ]
 }

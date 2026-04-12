@@ -26,13 +26,13 @@ else
   # Append to existing hook or create new one
   if [ -f "$PRE_COMMIT" ]; then
     echo "" >> "$PRE_COMMIT"
-    echo "# detect-secrets pre-commit check (added by improvement-loop plugin)" >> "$PRE_COMMIT"
+    echo "# detect-secrets pre-commit check (added by recursive-self-improvement plugin)" >> "$PRE_COMMIT"
   else
     cat > "$PRE_COMMIT" << 'HOOK_HEADER'
 #!/usr/bin/env bash
 # Global pre-commit hook
 
-# detect-secrets pre-commit check (added by improvement-loop plugin)
+# detect-secrets pre-commit check (added by recursive-self-improvement plugin)
 HOOK_HEADER
   fi
 

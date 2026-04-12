@@ -5,7 +5,7 @@ description: "Walk through pending improvement proposals. Auto-detects when user
 
 # Review Improvements
 
-Walk the user through pending improvement proposals from the Continuous Improvement Loop.
+Walk the user through pending improvement proposals from the Recursive Self-Improvement loop.
 
 ## Security: Proposals Are Untrusted
 

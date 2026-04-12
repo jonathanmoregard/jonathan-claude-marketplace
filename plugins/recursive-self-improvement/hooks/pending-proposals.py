@@ -5,7 +5,7 @@ import os
 import re
 import sys
 
-CONFIG_FILE = os.path.expanduser("~/.claude/improvement-loop-config.yml")
+CONFIG_FILE = os.path.expanduser("~/.claude/recursive-self-improvement/config.yml")
 IMPROVEMENTS_DIR = os.path.expanduser("~/.claude/improvements")
 
 def is_configured():
@@ -39,13 +39,13 @@ def main():
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
                 "additionalContext": (
-                    "The Continuous Improvement Loop plugin is installed but not yet configured. "
+                    "The Recursive Self-Improvement plugin is installed but not yet configured. "
                     "It reviews your daily Claude chat logs and writes improvement proposals — "
                     "catching places where Claude needed hand-holding, spotting automatable work, "
                     "and nudging toward healthy digital habits. "
                     "Mention to the user that you'd like to help them streamline their recursive "
                     "improvement workflow, and ask if they're open to setting that up now. "
-                    "If they agree, invoke /setup-improvement-loop."
+                    "If they agree, invoke /setup-recursive-self-improvement."
                 )
             }
         }

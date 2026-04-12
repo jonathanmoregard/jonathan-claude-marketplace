@@ -1,11 +1,11 @@
 ---
-name: setup-improvement-loop
-description: "Configure the Continuous Improvement Loop — set your north star, goals, alignment signals, and cron schedule. Run this first after installing the plugin, or re-run to update your configuration."
+name: setup-recursive-self-improvement
+description: "Configure the Recursive Self-Improvement loop — set your north star, goals, alignment signals, and cron schedule. Run this first after installing the plugin, or re-run to update your configuration."
 ---
 
-# Setup Improvement Loop
+# Setup Recursive Self-Improvement
 
-You are configuring the Continuous Improvement Loop plugin. This plugin reviews your daily Claude chat logs and writes improvement proposals.
+You are configuring the Recursive Self-Improvement plugin. This plugin reviews your daily Claude chat logs and writes improvement proposals.
 
 ## Pre-flight
 
@@ -18,25 +18,31 @@ git -C ~/.claude rev-parse --git-dir 2>/dev/null
 
 If `~/.claude` is **not** a git repo, tell the user:
 
-> "The improvement loop stores proposals and config in `~/.claude` and requires it to be a git repository (so proposals can be pushed and tracked). It isn't one yet. Run this to set it up:
+> "The recursive self-improvement loop stores proposals and config in `~/.claude` and requires it to be a git repository (so proposals can be pushed and tracked). It isn't one yet. Run this to set it up:
 >
 > ```bash
 > cd ~/.claude && git init && git add . && git commit -m 'init'
 > ```
 >
-> Then re-run /setup-improvement-loop."
+> Then re-run /setup-recursive-self-improvement."
 
 **Stop here** if not a git repo. Do not continue setup.
 
 ### 2. Check existing config
 
-Check if `~/.claude/improvement-loop-config.yml` exists:
+Check if `~/.claude/recursive-self-improvement/config.yml` exists:
 - If yes: read it, tell the user their current config, and ask if they want to update it or start fresh
 - If no: proceed with fresh setup
 
 ## Interview
 
-Ask these questions **one at a time**. Wait for the user's response before asking the next.
+After each answer, append it to `~/.claude/tmp/recursive-self-improvement-setup.yml` so progress is saved as you go:
+
+```bash
+mkdir -p ~/.claude/tmp
+```
+
+Ask these questions **one at a time**. Wait for the user's response before asking the next. After each answer, write the collected answers so far to `~/.claude/tmp/recursive-self-improvement-setup.yml` in the same YAML structure as the final config.
 
 ### 1. Life Mission
 
@@ -67,11 +73,11 @@ Ask these questions **one at a time**. Wait for the user's response before askin
 
 ## Write Config
 
-Write `~/.claude/improvement-loop-config.yml`:
+Write `~/.claude/recursive-self-improvement/config.yml`:
 
 ```yaml
-# Continuous Improvement Loop — User Configuration
-# Re-run /setup-improvement-loop to update
+# Recursive Self-Improvement — User Configuration
+# Re-run /setup-recursive-self-improvement to update
 
 life_mission: |
   <user's response>
@@ -115,15 +121,15 @@ schedule:
 
 4. Install analysis cron. Parse `schedule.analysis_cron` from config into hour and minute:
    ```bash
-   # Remove previous improvement-loop-analysis entry, add new one
-   (crontab -l 2>/dev/null | grep -v "# improvement-loop-analysis" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/improvements/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/prompts/daily-review.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # improvement-loop-analysis") | crontab -
+   # Remove previous recursive-self-improvement-analysis entry, add new one
+   (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/improvements/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/prompts/daily-review.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # recursive-self-improvement-analysis") | crontab -
    ```
    Adjust `0 17` based on the user's chosen analysis time.
 
 5. Install review reminder cron. Parse `schedule.review_reminder` from config into hour and minute:
    ```bash
-   # Remove previous improvement-loop-reminder entry, add new one
-   (crontab -l 2>/dev/null | grep -v "# improvement-loop-reminder" ; echo "0 9 * * * ~/.claude/todo-add 'Review improvement proposals — run /review-improvements in Claude Code' # improvement-loop-reminder") | crontab -
+   # Remove previous recursive-self-improvement-reminder entry, add new one
+   (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-reminder" ; echo "0 9 * * * ~/.claude/todo-add 'Review improvement proposals — run /review-improvements in Claude Code' # recursive-self-improvement-reminder") | crontab -
    ```
    Adjust `0 9` based on the user's chosen reminder time.
    
@@ -134,12 +140,17 @@ schedule:
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/install-detect-secrets.sh"
    ```
 
-7. Commit:
+7. Remove the setup scratchpad:
    ```bash
-   cd ~/.claude && git add improvement-loop-config.yml push-proposals.sh prompts/daily-review.md prompts/monthly-review.md && git commit -m "chore: configure improvement loop"
+   rm -f ~/.claude/tmp/recursive-self-improvement-setup.yml
    ```
 
-8. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. You'll get a reminder at <review_time> to review proposals. Run /review-improvements anytime to go through them."
+8. Commit:
+   ```bash
+   cd ~/.claude && git add recursive-self-improvement/config.yml push-proposals.sh prompts/daily-review.md prompts/monthly-review.md && git commit -m "chore: configure recursive self-improvement"
+   ```
+
+9. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. You'll get a reminder at <review_time> to review proposals. Run /review-improvements anytime to go through them."
 
 ## Offer Monthly Catch-Up
 

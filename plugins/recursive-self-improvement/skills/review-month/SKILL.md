@@ -22,7 +22,7 @@ This complements the daily review cron — daily reviews catch individual sessio
 
 Before running, verify:
 
-1. `~/.claude/improvement-loop-config.yml` exists. If not: "Run /setup-improvement-loop first to configure your north star and goals."
+1. `~/.claude/recursive-self-improvement/config.yml` exists. If not: "Run /setup-recursive-self-improvement first to configure your north star and goals."
 
 2. `~/.claude` is a git repository:
    ```bash

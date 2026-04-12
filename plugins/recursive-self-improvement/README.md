@@ -1,4 +1,4 @@
-# Continuous Improvement Loop
+# Recursive Self-Improvement
 
 A Claude Code plugin that reviews your daily chat logs and writes improvement proposals — catching north star violations, wellbeing drift, and automatable meta-work.
 
@@ -24,14 +24,14 @@ claude plugins install <path-or-url>
 
 ## Setup
 
-Run `/setup-improvement-loop` in any Claude session. The wizard interviews you about:
+Run `/setup-recursive-self-improvement` in any Claude session. The wizard interviews you about:
 
 - **Your north star** — what does a good life/work balance look like?
 - **Your goals** — what are you working toward?
 - **Alignment signals** — how can the agent assess whether you're on track?
 - **Cron schedule** — when should the daily review run?
 
-Configuration is saved to `~/.claude/improvement-loop-config.yml`.
+Configuration is saved to `~/.claude/recursive-self-improvement/config.yml`.
 
 ## Security Model
 
@@ -45,6 +45,6 @@ Configuration is saved to `~/.claude/improvement-loop-config.yml`.
 
 ## Commands
 
-- `/setup-improvement-loop` — configure the plugin (run once, re-run to update)
+- `/setup-recursive-self-improvement` — configure the plugin (run once, re-run to update)
 - `/review-improvements` — walk through pending proposals
 - `/review-improvements-help` — explain how the system works
