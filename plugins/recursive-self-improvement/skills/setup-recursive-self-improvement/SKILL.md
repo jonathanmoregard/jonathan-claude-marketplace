@@ -87,13 +87,7 @@ The review reminder is handled by the SessionStart hook (see `hooks/pending-prop
 
 ## Write Config
 
-Create the directory structure:
-```bash
-mkdir -p ~/.claude/recursive-self-improvement/proposals
-mkdir -p ~/.claude/recursive-self-improvement/config
-```
-
-Write `~/.claude/recursive-self-improvement/config/config.json`:
+Write `~/.claude/recursive-self-improvement/config/config.json` (the install script creates the directories):
 
 ```json
 {
@@ -123,69 +117,33 @@ Only include `north_star` and `current_goals` if alignment is enabled.
 
 Note: `off_track_patterns` is not configured during setup. It emerges over time as the review agent learns from the user's accept/reject decisions and conversations during `/review-improvements`.
 
-## Write Reference Files
+## Optional: Secret Protection
 
-Copy the reference files to the user's config directory. These are the user's customizable copies — edits here change agent behavior without re-running setup.
+Check the subagent's `detect_secrets_installed` result. If not already installed, ask:
+
+> "Since proposals get committed to git, there's a small risk that the analysis agent accidentally includes sensitive data (API keys, tokens) in a proposal. I can install a pre-commit hook called `detect-secrets` that blocks commits containing anything that looks like a secret. It's a Python tool installed via pip. Want me to include it?"
+
+Remember their answer for the install step.
+
+## Install
+
+Tell the user:
+
+> "Now I'll install everything — creating directories, copying config files, setting up the daily cron job at <analysis_time>, and committing. This takes a moment."
+
+Parse the analysis time into hour and minute, then run the install script:
 
 ```bash
-cp "${CLAUDE_PLUGIN_ROOT}/references/policy.md" ~/.claude/recursive-self-improvement/config/policy.md
-cp "${CLAUDE_PLUGIN_ROOT}/references/categories.md" ~/.claude/recursive-self-improvement/config/categories.md
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh" "${CLAUDE_PLUGIN_ROOT}" <hour> <minute> [--detect-secrets]
 ```
 
-Tell the user: "The policy and category definitions are at `~/.claude/recursive-self-improvement/config/policy.md` and `categories.md` — you can edit these anytime to tune behavior."
+Append `--detect-secrets` only if the user opted in (or if already installed, skip it either way).
 
-## Write Prompt
+After the script completes, tell the user:
 
-Copy `${CLAUDE_PLUGIN_ROOT}/prompts/daily-review.md` to `~/.claude/recursive-self-improvement/config/prompt.md`.
-
-This file is the user's customizable copy. The cron job reads from here, so the user can edit it to tune behavior without re-running setup.
-
-## Post-Config Setup
-
-1. Copy `push-proposals.sh` to `~/.claude/push-proposals.sh` and make executable:
-   ```bash
-   cp "${CLAUDE_PLUGIN_ROOT}/scripts/push-proposals.sh" ~/.claude/push-proposals.sh
-   chmod +x ~/.claude/push-proposals.sh
-   ```
-
-2. Create logs directory:
-   ```bash
-   mkdir -p ~/.claude/logs
-   ```
-
-3. Install the daily analysis cron job. Explain what it does:
-
-   > "Now I'll set up a cron job that runs the analysis agent daily at <analysis_time>. It reads your chat logs, checks them against the categories you chose, and writes improvement proposals. It runs unattended when your machine is on — you'll see new proposals next time you open Claude."
-
-   Parse `schedule.analysis_cron` from config into hour and minute:
-   ```bash
-   # Remove previous recursive-self-improvement-analysis entry, add new one
-   (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/recursive-self-improvement/proposals/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/prompt.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # recursive-self-improvement-analysis") | crontab -
-   ```
-   Adjust `0 17` based on the user's chosen analysis time.
-
-4. **Optional: secret protection.** Check the subagent's `detect_secrets_installed` result. Ask the user:
-
-   > "One more thing — since proposals get committed to git, there's a small risk that the analysis agent accidentally includes sensitive data (API keys, tokens) in a proposal. I can install a pre-commit hook called `detect-secrets` that blocks commits containing anything that looks like a secret. Want me to set that up? (It's a Python tool installed via pip.)"
-
-   If yes:
-   ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/install-detect-secrets.sh"
-   ```
-
-   If no: skip. If already installed (from pre-flight check): skip and tell the user it's already in place.
-
-5. Remove the setup scratchpad:
-   ```bash
-   rm -f ~/.claude/tmp/recursive-self-improvement-setup.yml
-   ```
-
-6. Commit:
-   ```bash
-   cd ~/.claude && git add recursive-self-improvement/ push-proposals.sh && git commit -m "chore: configure recursive self-improvement"
-   ```
-
-7. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. When there are pending proposals, Claude will mention them at the start of your sessions — just run /review-improvements to go through them."
+> "Setup complete! The analysis agent runs daily at <analysis_time>. When there are pending proposals, Claude will mention them at the start of your sessions — just run /review-improvements to go through them.
+>
+> You can customize behavior anytime by editing files in `~/.claude/recursive-self-improvement/config/` — the prompt, policy, and category definitions all live there."
 
 ## Offer Monthly Catch-Up
 
