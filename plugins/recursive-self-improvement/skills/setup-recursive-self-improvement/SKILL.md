@@ -57,7 +57,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category desc
 
 ### 2. Daily Proposal Limit
 
-> "How many improvement proposals should the daily analysis produce at most? This caps the daily run — the monthly backlog review is uncapped. Default is 3."
+> "How many improvement proposals should the daily analysis produce at most? The monthly review is capped at 5. Default is 3."
 
 ### 3. North Star (only if alignment is enabled)
 
