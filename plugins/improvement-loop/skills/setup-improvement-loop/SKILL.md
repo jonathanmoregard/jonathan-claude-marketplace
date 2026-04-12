@@ -9,31 +9,61 @@ You are configuring the Continuous Improvement Loop plugin. This plugin reviews 
 
 ## Pre-flight
 
-1. Check if `~/.claude/improvement-loop-config.yml` exists
-   - If yes: read it, tell the user their current config, and ask if they want to update it or start fresh
-   - If no: proceed with fresh setup
+### 1. Check git repo
+
+Run:
+```bash
+git -C ~/.claude rev-parse --git-dir 2>/dev/null
+```
+
+If `~/.claude` is **not** a git repo, tell the user:
+
+> "The improvement loop stores proposals and config in `~/.claude` and requires it to be a git repository (so proposals can be pushed and tracked). It isn't one yet. Run this to set it up:
+>
+> ```bash
+> cd ~/.claude && git init && git add . && git commit -m 'init'
+> ```
+>
+> Then re-run /setup-improvement-loop."
+
+**Stop here** if not a git repo. Do not continue setup.
+
+### 2. Check existing config
+
+Check if `~/.claude/improvement-loop-config.yml` exists:
+- If yes: read it, tell the user their current config, and ask if they want to update it or start fresh
+- If no: proceed with fresh setup
 
 ## Interview
 
 Ask these questions **one at a time**. Wait for the user's response before asking the next.
 
-### 1. North Star
+### 1. Life Mission
 
-> "What does a good life/work balance look like for you? This is the lens the review agent uses to assess your daily patterns. Think: what state do you want to spend most of your time in?"
+> "What are you working towards? Describe your life mission — the deeper purpose or direction that guides your choices. This is the lens the review agent uses to assess your daily patterns."
 
-### 2. Goals
+### 2. Current Goals
 
-> "What are you currently working toward? List your goals across any areas of life — the review agent uses these to detect rabbit holes and drift. These are living and can be updated anytime by re-running this setup."
+> "How does that life mission manifest in your current goals? What are you concretely working on right now — across work, health, relationships, creative projects, or anything else? These are living and can be updated anytime by re-running this setup."
 
-### 3. Alignment Signals
+### 3. Off-Track Patterns
 
-> "How can the review agent assess whether you are living in accordance with your goals or not? Describe what 'on track' looks like and what 'off track' looks like. Be specific about observable patterns — things that would show up in your Claude usage logs."
+> "What patterns do you fall into when you're NOT living in alignment with your mission? Be specific — the review agent needs observable signals from your Claude usage logs."
 >
-> Examples: "Working past 10pm means I'm in manic mode", "Long sessions where I'm pasting code means I'm firefighting instead of delegating", "Working on X project when I said I'd focus on Y this week"
+> Examples:
+> - **Procrastination** — avoiding hard things by doing easy-looking things
+> - **Yak shaving** — spending hours on tooling/setup instead of the actual goal
+> - **Rabbit holes** — losing context awareness, going deep on tangents that don't matter
+> - **Addiction loops** — compulsive checking, returning to the same thing repeatedly
+> - **Manic late-night sessions** — working past 10pm, long unbroken streaks
 
-### 4. Cron Schedule
+### 4. Analysis Schedule
 
-> "When should the daily review run? Default is 17:00 (5 PM) local time. Enter a time in 24h format, or press enter for default."
+> "When should the analysis agent run? This is the cron job that reads your chat logs and writes improvement proposals — it runs unattended when your computer is on. Default is 17:00 (5 PM). Enter a time in 24h format, or press enter for default."
+
+### 5. Review Reminder
+
+> "When should you be reminded to actually review the proposals? This sends a TickTick reminder so it doesn't get lost. Default is 09:00 (9 AM) the next morning. Enter a time in 24h format, or press enter for default."
 
 ## Write Config
 
@@ -43,23 +73,23 @@ Write `~/.claude/improvement-loop-config.yml`:
 # Continuous Improvement Loop — User Configuration
 # Re-run /setup-improvement-loop to update
 
-north_star: |
+life_mission: |
   <user's response>
 
-goals:
+current_goals:
   - category: "<category>"
     items:
       - "<goal>"
       - "<goal>"
 
-alignment_signals:
-  on_track: |
-    <user's description>
-  off_track: |
-    <user's description>
+off_track_patterns:
+  - name: "<pattern name>"
+    description: |
+      <user's description of this pattern>
 
 schedule:
-  cron_time: "17:00"
+  analysis_cron: "17:00"   # when the agent runs to analyze logs and write proposals
+  review_reminder: "09:00" # when a TickTick reminder fires to prompt you to run /review-improvements
   timezone: "<detected or asked>"
 ```
 
@@ -76,27 +106,46 @@ schedule:
    chmod +x ~/.claude/push-proposals.sh
    ```
 
-3. Copy `daily-review.md` prompt to `~/.claude/prompts/daily-review.md`:
+3. Copy prompts to `~/.claude/prompts/`:
    ```bash
    mkdir -p ~/.claude/prompts
    cp "${CLAUDE_PLUGIN_ROOT}/prompts/daily-review.md" ~/.claude/prompts/daily-review.md
+   cp "${CLAUDE_PLUGIN_ROOT}/prompts/monthly-review.md" ~/.claude/prompts/monthly-review.md
    ```
 
-4. Install crontab entry. Parse `schedule.cron_time` from config into hour and minute:
+4. Install analysis cron. Parse `schedule.analysis_cron` from config into hour and minute:
    ```bash
-   # Read existing crontab, remove any previous improvement-loop entry, add new one
-   (crontab -l 2>/dev/null | grep -v "# improvement-loop" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/improvements/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/prompts/daily-review.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # improvement-loop") | crontab -
+   # Remove previous improvement-loop-analysis entry, add new one
+   (crontab -l 2>/dev/null | grep -v "# improvement-loop-analysis" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/improvements/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/prompts/daily-review.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # improvement-loop-analysis") | crontab -
    ```
-   Adjust the `0 17` based on the user's chosen time.
+   Adjust `0 17` based on the user's chosen analysis time.
 
-5. Run detect-secrets installation:
+5. Install review reminder cron. Parse `schedule.review_reminder` from config into hour and minute:
+   ```bash
+   # Remove previous improvement-loop-reminder entry, add new one
+   (crontab -l 2>/dev/null | grep -v "# improvement-loop-reminder" ; echo "0 9 * * * ~/.claude/todo-add 'Review improvement proposals — run /review-improvements in Claude Code' # improvement-loop-reminder") | crontab -
+   ```
+   Adjust `0 9` based on the user's chosen reminder time.
+   
+   Note: only install the reminder cron if `~/.claude/todo-add` exists. If it doesn't, tell the user: "Skipping review reminder — `~/.claude/todo-add` not found. You can add it later or use another reminder method."
+
+6. Run detect-secrets installation:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/install-detect-secrets.sh"
    ```
 
-6. Commit:
+7. Commit:
    ```bash
-   cd ~/.claude && git add improvement-loop-config.yml push-proposals.sh prompts/daily-review.md && git commit -m "chore: configure improvement loop"
+   cd ~/.claude && git add improvement-loop-config.yml push-proposals.sh prompts/daily-review.md prompts/monthly-review.md && git commit -m "chore: configure improvement loop"
    ```
 
-7. Tell the user: "Setup complete! The review agent will run daily at <time>. Pending proposals will show up as a nudge when you start a new Claude session. Run /review-improvements to go through them."
+8. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. You'll get a reminder at <review_time> to review proposals. Run /review-improvements anytime to go through them."
+
+## Offer Monthly Catch-Up
+
+After confirming setup is complete, ask:
+
+> "Want to run a monthly review now to catch up on your history? It'll scan the last 30 days of logs and write proposals for any patterns it finds. This can take a few minutes."
+
+If yes: invoke the `review-month` skill.
+If no: done.
