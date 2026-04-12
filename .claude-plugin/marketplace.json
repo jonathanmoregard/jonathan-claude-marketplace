@@ -1,10 +1,21 @@
 {
   "name": "jonathan-plugins",
-  "description": "Jonathan's personal Claude Code plugins",
-  "plugins": {
-    "improvement-loop": {
+  "owner": {
+    "name": "Jonathan Moregard"
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Jonathan's personal Claude Code plugins"
+  },
+  "plugins": [
+    {
+      "name": "improvement-loop",
       "version": "0.1.0",
-      "path": "plugins/improvement-loop"
+      "description": "Daily Opus-powered review of chat logs that identifies behavior patterns (north star violations, wellbeing drift, automatable meta-work) and writes actionable improvement proposals.",
+      "author": {
+        "name": "Jonathan Moregard"
+      },
+      "source": "./plugins/improvement-loop"
     }
-  }
+  ]
 }
