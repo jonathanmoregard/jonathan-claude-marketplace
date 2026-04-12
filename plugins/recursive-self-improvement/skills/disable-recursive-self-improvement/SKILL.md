@@ -19,7 +19,7 @@ Wait for the user's choice before proceeding.
 ## Step 2: Remove cron jobs (all options)
 
 ```bash
-crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" | grep -v "# recursive-self-improvement-reminder" | crontab -
+crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" | crontab -
 ```
 
 Confirm: "Cron jobs removed."

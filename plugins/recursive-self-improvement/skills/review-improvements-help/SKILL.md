@@ -11,7 +11,8 @@ Explain the Recursive Self-Improvement to the user. Cover:
 
 A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours. It looks for:
 
-- **Productivity** — where Claude misunderstood you, got stuck, or needed rescue. Proposes skills, hooks, CLAUDE.md rules to prevent recurrence. Also catches automatable meta-work.
+- **Productivity** — where Claude misunderstood you, got stuck, or needed rescue. Proposes skills, hooks, CLAUDE.md rules to prevent recurrence.
+- **Automation** — repetitive cleanup work you do that a script or cron job could handle.
 - **Alignment** — drift from your stated goals and north star. Detects when daily work doesn't connect to what you say matters.
 - **Wellbeing** — based on your configured off-track patterns. Detects manic sessions, zombie mode, rabbit holes, and compulsive loops.
 
@@ -19,7 +20,7 @@ A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours.
 
 - Stored in `~/.claude/recursive-self-improvement/proposals/` as markdown files
 - Contain problem descriptions and 1-3 proposed fixes — no log excerpts for security
-- Tagged with category (productivity/alignment/wellbeing) and linked to source log files
+- Tagged with category (productivity/automation/alignment/wellbeing) and linked to source log files
 - Status lifecycle: pending → accepted/rejected/deferred → implemented
 
 ## Commands
@@ -30,7 +31,10 @@ A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours.
 
 ## Configuration
 
-Your config lives at `~/.claude/recursive-self-improvement/config/`. Re-run `/setup-recursive-self-improvement` to update it. The prompt at `config/prompt.md` is your customizable copy — edit it to tune analysis behavior.
+Your config lives at `~/.claude/recursive-self-improvement/config/`. Re-run `/setup-recursive-self-improvement` to update it. Customizable files:
+- `config/prompt.md` — the analysis prompt
+- `config/policy.md` — proposal tone (non-coercion by default)
+- `config/categories.md` — what to flag per category
 
 ## Security
 

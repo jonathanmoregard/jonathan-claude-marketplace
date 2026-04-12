@@ -46,27 +46,43 @@ Then ask: **"Accept (which fix?), reject, or defer?"**
 ### 3. Handle Response
 
 **Accept:**
-1. The user tells you which fix to implement (or you recommend one and they confirm)
-2. Implement the fix — create/modify the skill, hook, CLAUDE.md rule, memory, or whatever the fix calls for
-3. Test the implementation:
+1. Briefly ask: "What made this one resonate?" — understand why, so you can save preferences to memory for the analysis agent to learn from.
+2. The user tells you which fix to implement (or you recommend one and they confirm)
+3. Implement the fix — create/modify the skill, hook, CLAUDE.md rule, memory, or whatever the fix calls for
+4. Test the implementation:
    - For hooks: run the hook script directly and verify output
    - For skills: check the skill file loads (correct frontmatter, valid markdown)
    - For CLAUDE.md changes: read back the file to confirm
    - For settings.json changes: validate JSON syntax
-4. Present test results to the user
-5. On user approval: commit all changes, push, update proposal `status: implemented`
-6. Move to next proposal
+5. Present test results to the user
+6. On user approval: commit all changes, push, update proposal `status: implemented`
+7. Save a memory about what kind of proposals the user values (pattern, not specific proposal)
+8. Move to next proposal
 
 **Reject:**
-1. Ask if they want to note a reason (optional)
-2. Update proposal `status: rejected` (add `rejection_reason: "..."` to frontmatter if given)
-3. Move to next proposal
+1. Interview — don't push, understand. Ask why they're rejecting. Keep it conversational:
+   - "What's off about this one?"
+   - If the answer is vague: "Is it the problem description that doesn't match your experience, or the proposed fixes that don't feel right?"
+   - If it reveals a preference: note it for memory
+2. Update proposal `status: rejected` (add `rejection_reason: "..."` to frontmatter based on what you learned)
+3. Save a memory about what kind of proposals the user doesn't find useful and why — this helps the analysis agent avoid similar proposals in the future
+4. Move to next proposal
 
 **Defer:**
 1. Update proposal `status: deferred`
 2. Move to next proposal
 
-### 4. Finish
+### 4. Learning from decisions
+
+Use memories to build a model of the user's preferences over time. Save to the project memory directory (`~/.claude/projects/`) with entries like:
+- What categories of proposals the user tends to accept vs reject
+- What level of specificity they prefer
+- Whether they prefer small targeted fixes or broader changes
+- Off-track patterns that emerge from wellbeing rejections/accepts
+
+The analysis agent reads these memories before writing proposals — your interview notes directly improve future proposal quality.
+
+### 5. Finish
 
 After all proposals reviewed:
 1. Commit any remaining status changes to proposal files

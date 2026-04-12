@@ -58,7 +58,11 @@ def main():
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": f"You have {pending} pending improvement {noun}. Run /review-improvements to go through them."
+                "additionalContext": (
+                    f"You have {pending} pending improvement {noun}. "
+                    "Mention this to the user and let them know they can run "
+                    "/review-improvements to go through them when they're ready."
+                )
             }
         }
         print(json.dumps(output))

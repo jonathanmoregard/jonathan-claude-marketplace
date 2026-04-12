@@ -5,18 +5,15 @@ description: "Configure the Recursive Self-Improvement loop — choose analysis 
 
 # Setup Recursive Self-Improvement
 
-You are configuring the Recursive Self-Improvement plugin. This plugin reviews your daily Claude chat logs and writes improvement proposals.
+## Pre-flight (run as subagent)
 
-## Pre-flight
+Before showing anything to the user, dispatch a subagent to run these checks silently. The subagent should report back a structured result:
 
-### 1. Check git repo
+**Subagent task:** "Check prerequisites for recursive-self-improvement setup. Report: (1) is ~/.claude a git repo? (2) does ~/.claude/recursive-self-improvement/config/config.json exist? If it exists, read it and return its contents. Return a JSON object: {git_repo: bool, existing_config: null | <config contents>}"
 
-Run:
-```bash
-git -C ~/.claude rev-parse --git-dir 2>/dev/null
-```
+### Handle subagent result
 
-If `~/.claude` is **not** a git repo, tell the user:
+**If `git_repo` is false:** Tell the user:
 
 > "The recursive self-improvement loop stores proposals and config in `~/.claude` and requires it to be a git repository (so proposals can be pushed and tracked). It isn't one yet. Run this to set it up:
 >
@@ -26,13 +23,15 @@ If `~/.claude` is **not** a git repo, tell the user:
 >
 > Then re-run /setup-recursive-self-improvement."
 
-**Stop here** if not a git repo. Do not continue setup.
+**Stop here.** Do not continue setup.
 
-### 2. Check existing config
+**If `existing_config` is not null:** Tell the user their current config summary and ask if they want to update it or start fresh. Then proceed to the introduction.
 
-Check if `~/.claude/recursive-self-improvement/config.yml` exists:
-- If yes: read it, tell the user their current config, and ask if they want to update it or start fresh
-- If no: proceed with fresh setup
+**If all clear:** Proceed to the introduction.
+
+## Introduction
+
+> "Welcome to Recursive Self-Improvement! This plugin helps you improve the way you use Claude by analyzing your usage history, finding recurring issues, and crafting improvement proposals. You then decide whether Claude should implement them — nothing happens without your say-so."
 
 ## Interview
 
@@ -46,17 +45,19 @@ Ask these questions **one at a time**. Wait for the user's response before askin
 
 ### 1. Categories
 
-Explain the three proposal categories and ask which the user wants enabled:
+Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category descriptions. Present a summary to the user:
 
-> "The improvement loop analyzes your daily Claude usage and writes proposals in three categories:
+> "The plugin can help you with four areas:
 >
-> 1. **Productivity** — Making Claude better at executing your goals without you needing to hold its hand. Detects when Claude misunderstood intent, got stuck, needed rescue, or when you had to take over and paste fixes. Proposes skills, hooks, CLAUDE.md rules, and config changes so Claude handles it autonomously next time.
+> 1. **Productivity** — Making Claude better at acting without you there holding its hand. Proposes config changes so Claude handles things autonomously next time.
 >
-> 2. **Alignment** — Adherence to your goals and north star. Detects when your daily work drifts from what you say matters. Requires you to define a north star and goals so the agent has something to measure against.
+> 2. **Automation** — Finds repetitive cleanup work in your sessions that a script or cron job could handle instead.
 >
-> 3. **Wellbeing** — Anti-mania, anti-burnout, healthy patterns. Detects zombie sessions, late-night marathons, compulsive loops, and rabbit holes. Requires you to describe your off-track patterns so the agent knows what to flag.
+> 3. **Alignment** — Are you working on your goals, or drifting? Reviews your daily work against your stated north star. You get proposals, not orders.
 >
-> Which categories do you want? (e.g. 'all', '1 and 3', 'just productivity')"
+> 4. **Wellbeing** — Spots patterns that disrupt your wellbeing. Anti-mania, anti-burnout, healthy rhythms.
+>
+> Which categories do you want? (e.g. 'all', '1 and 3', 'productivity and automation')"
 
 ### 2. Daily Proposal Limit
 
@@ -74,33 +75,19 @@ Skip this question if the user did NOT select the alignment category.
 
 > "What are your current concrete goals? What are you working on right now — across work, health, relationships, creative projects, or anything else?"
 
-**After the user answers:** Assess whether the stated goals clearly connect to the north star. If any goal seems disconnected or the connection is non-obvious, engage in a brief interview to understand how they fit together. Don't just ask once — keep inquiring until you genuinely understand the relationship. For example:
+**After the user answers:** For each goal or goal category, interview the user about how it connects to their north star. Don't just ask once — keep inquiring until you genuinely understand the relationship. For example:
 
 - "How does [goal] relate to [north star aspect]?"
 - If the answer is vague: "Can you give me a concrete example of how working on [goal] moves you toward [north star]?"
 - If it's an indirect path: "So the chain is [goal] → [intermediate outcome] → [north star aspect]? Do I have that right?"
 
-Continue until you can articulate the connection yourself. Then confirm your understanding with the user. Save the validated understanding in the config under `goal_connections` so the daily agent won't flag this work as off-track.
+Continue until you can articulate the connection yourself. Then confirm your understanding with the user. Save each goal group with its `connection` field in config so the daily agent understands why the user is working on it.
 
-### 5. Off-Track Patterns (only if wellbeing is enabled)
+### 5. Analysis Schedule
 
-Skip this question if the user did NOT select the wellbeing category.
+> "When should the analysis agent run? This is the cron job that reads your chat logs and writes improvement proposals — it runs unattended when your computer is on. Default is 17:00 (5 PM). Enter a time in 24h format, or say 'default' for 17:00."
 
-> "What patterns do you fall into when you're NOT at your best? Be specific — the review agent needs observable signals from your Claude usage logs."
->
-> Examples:
-> - **Manic late-night sessions** — working past 10pm, long unbroken streaks
-> - **Rabbit holes** — losing context awareness, going deep on tangents
-> - **Addiction loops** — compulsive checking, returning to the same thing repeatedly
-> - **Zombie mode** — going through the motions without clear intent
-
-### 6. Analysis Schedule
-
-> "When should the analysis agent run? This is the cron job that reads your chat logs and writes improvement proposals — it runs unattended when your computer is on. Default is 17:00 (5 PM). Enter a time in 24h format, or press enter for default."
-
-### 7. Review Reminder
-
-> "When should you be reminded to actually review the proposals? This sends a TickTick reminder so it doesn't get lost. Default is 09:00 (9 AM) the next morning. Enter a time in 24h format, or press enter for default."
+The review reminder is handled by the SessionStart hook (see `hooks/pending-proposals.py`) — it detects pending proposals and tells Claude to mention them to the user with instructions on how to start a review.
 
 ## Write Config
 
@@ -116,6 +103,7 @@ Write `~/.claude/recursive-self-improvement/config/config.json`:
 {
   "categories": {
     "productivity": true/false,
+    "automation": true/false,
     "alignment": true/false,
     "wellbeing": true/false
   },
@@ -124,38 +112,35 @@ Write `~/.claude/recursive-self-improvement/config/config.json`:
   "current_goals": [
     {
       "category": "<category>",
-      "items": ["<goal>", "<goal>"]
-    }
-  ],
-  "goal_connections": [
-    {
-      "goal": "<goal that seemed disconnected>",
-      "connection": "<user's explanation of how it connects to north star>"
-    }
-  ],
-  "off_track_patterns": [
-    {
-      "name": "<pattern name>",
-      "description": "<user's description>"
+      "items": ["<goal>", "<goal>"],
+      "connection": "<how this category of goals connects to the north star>"
     }
   ],
   "schedule": {
     "analysis_cron": "17:00",
-    "review_reminder": "09:00",
     "timezone": "<detected or asked>"
   }
 }
 ```
 
-Only include `north_star`, `current_goals`, and `goal_connections` if alignment is enabled. Only include `off_track_patterns` if wellbeing is enabled.
+Only include `north_star` and `current_goals` if alignment is enabled.
+
+Note: `off_track_patterns` is not configured during setup. It emerges over time as the review agent learns from the user's accept/reject decisions and conversations during `/review-improvements`.
+
+## Write Reference Files
+
+Copy the reference files to the user's config directory. These are the user's customizable copies — edits here change agent behavior without re-running setup.
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/references/policy.md" ~/.claude/recursive-self-improvement/config/policy.md
+cp "${CLAUDE_PLUGIN_ROOT}/references/categories.md" ~/.claude/recursive-self-improvement/config/categories.md
+```
+
+Tell the user: "The policy and category definitions are at `~/.claude/recursive-self-improvement/config/policy.md` and `categories.md` — you can edit these anytime to tune behavior."
 
 ## Write Prompt
 
-Generate `~/.claude/recursive-self-improvement/config/prompt.md` from the default prompt at `${CLAUDE_PLUGIN_ROOT}/prompts/daily-review.md`, but **only include sections for the enabled categories**:
-
-- If productivity is disabled: omit the "Flag — productivity issues" section
-- If alignment is disabled: omit the "Flag — alignment drift" section
-- If wellbeing is disabled: omit the "Flag — wellbeing patterns" section
+Copy `${CLAUDE_PLUGIN_ROOT}/prompts/daily-review.md` to `~/.claude/recursive-self-improvement/config/prompt.md`.
 
 This file is the user's customizable copy. The cron job reads from here, so the user can edit it to tune behavior without re-running setup.
 
@@ -179,31 +164,22 @@ This file is the user's customizable copy. The cron job reads from here, so the 
    ```
    Adjust `0 17` based on the user's chosen analysis time.
 
-4. Install review reminder cron. Parse `schedule.review_reminder` from config into hour and minute:
-   ```bash
-   # Remove previous recursive-self-improvement-reminder entry, add new one
-   (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-reminder" ; echo "0 9 * * * ~/.claude/todo-add 'Review improvement proposals — run /review-improvements in Claude Code' # recursive-self-improvement-reminder") | crontab -
-   ```
-   Adjust `0 9` based on the user's chosen reminder time.
-   
-   Note: only install the reminder cron if `~/.claude/todo-add` exists. If it doesn't, tell the user: "Skipping review reminder — `~/.claude/todo-add` not found. You can add it later or use another reminder method."
-
-5. Run detect-secrets installation:
+4. Run detect-secrets installation:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/install-detect-secrets.sh"
    ```
 
-6. Remove the setup scratchpad:
+5. Remove the setup scratchpad:
    ```bash
    rm -f ~/.claude/tmp/recursive-self-improvement-setup.yml
    ```
 
-7. Commit:
+6. Commit:
    ```bash
    cd ~/.claude && git add recursive-self-improvement/ push-proposals.sh && git commit -m "chore: configure recursive self-improvement"
    ```
 
-8. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. You'll get a reminder at <review_time> to review proposals. Run /review-improvements anytime to go through them. You can customize the analysis prompt at `~/.claude/recursive-self-improvement/config/prompt.md`."
+7. Tell the user: "Setup complete! The analysis agent runs daily at <analysis_time>. When there are pending proposals, Claude will mention them at the start of your sessions — just run /review-improvements to go through them."
 
 ## Offer Monthly Catch-Up
 
