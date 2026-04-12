@@ -54,7 +54,7 @@ Then ask: **"Accept (which fix?), reject, or defer?"**
    - For CLAUDE.md changes: read back the file to confirm
    - For settings.json changes: validate JSON syntax
 4. Present test results to the user
-5. On user approval: commit all changes, push, update proposal `status: implemented`
+5. Ask: "Want me to commit this?" — if yes, commit all changes, push, update proposal `status: implemented`
 6. Move to next proposal
 
 **Reject:**
