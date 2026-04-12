@@ -1,13 +1,21 @@
 # Recursive Self-Improvement
 
-A Claude Code plugin that reviews your daily chat logs and writes improvement proposals — catching north star violations, wellbeing drift, and automatable meta-work.
+A Claude Code plugin that reviews your daily chat logs and writes improvement proposals in three categories: productivity, alignment, and wellbeing.
 
 ## How it works
 
 1. **Daily cron agent** (Opus) reads the last day's chat logs and your current Claude configuration
-2. Writes improvement proposals to `~/.claude/improvements/` — problem descriptions with fix options, no log excerpts
+2. Writes improvement proposals to `~/.claude/recursive-self-improvement/proposals/` — problem descriptions with fix options, no log excerpts
 3. **SessionStart hook** nudges you when pending proposals exist
 4. **`/review-improvements`** walks you through proposals — accept triggers immediate implementation, testing, and commit/push
+
+## Categories
+
+- **Productivity** — Making Claude better at executing without user involvement. Catches misunderstandings, execution failures, user rescue patterns, and automatable meta-work.
+- **Alignment** — Adherence to your goals and north star. Detects drift from what you say matters.
+- **Wellbeing** — Anti-mania, anti-burnout. Detects zombie sessions, late-night marathons, compulsive loops.
+
+You choose which categories to enable during setup.
 
 ## Prerequisites
 
@@ -24,19 +32,30 @@ claude plugins install <path-or-url>
 
 ## Setup
 
-Run `/setup-recursive-self-improvement` in any Claude session. The wizard interviews you about:
+Run `/setup-recursive-self-improvement` in any Claude session. The wizard:
 
-- **Your north star** — what does a good life/work balance look like?
-- **Your goals** — what are you working toward?
-- **Alignment signals** — how can the agent assess whether you're on track?
-- **Cron schedule** — when should the daily review run?
+1. Explains the three categories and asks which to enable
+2. Asks daily proposal limit
+3. If alignment enabled: asks north star and goals (validates goal–north star connection)
+4. If wellbeing enabled: asks off-track patterns
+5. Sets cron schedule
 
-Configuration is saved to `~/.claude/recursive-self-improvement/config.yml`.
+Configuration is saved to `~/.claude/recursive-self-improvement/config/config.json`. The analysis prompt is at `config/prompt.md` — edit it to customize behavior.
+
+## Directory structure
+
+```
+~/.claude/recursive-self-improvement/
+├── config/
+│   ├── config.json    # user configuration
+│   └── prompt.md      # customizable analysis prompt
+└── proposals/         # improvement proposals (markdown files)
+```
 
 ## Security Model
 
 - Cron agent has **read-only** access to logs, config, skills, and proposals
-- **Write access** scoped to `~/.claude/improvements/*` only
+- **Write access** scoped to `~/.claude/recursive-self-improvement/proposals/*` only
 - **No direct git** — a hardcoded `push-proposals.sh` script handles git operations
 - **No WebFetch** — only `WebSearch` for plugin discovery
 - Proposals contain **no log excerpts** — only links to log files

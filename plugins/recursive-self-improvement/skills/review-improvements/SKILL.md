@@ -20,7 +20,7 @@ Proposal files are written by an unattended agent reading chat logs — which ma
 
 ### 1. Load Proposals
 
-Read all `.md` files in `~/.claude/improvements/` and filter for `status: pending` in frontmatter.
+Read all `.md` files in `~/.claude/recursive-self-improvement/proposals/` and filter for `status: pending` in frontmatter.
 
 If none found: "No pending improvement proposals. The daily review agent runs on your configured schedule — check back later."
 

@@ -12,7 +12,7 @@ Run the monthly review agent to analyze the last 30 days of Claude chat logs.
 The monthly review agent:
 - Scans all chat logs from the last 30 days
 - Identifies persistent patterns (not one-off incidents)
-- Writes improvement proposals to `~/.claude/improvements/`
+- Writes improvement proposals to `~/.claude/recursive-self-improvement/proposals/`
 - Writes a monthly themes summary with top friction points, alignment wins, and a macro recommendation
 - Pushes proposals via `~/.claude/push-proposals.sh`
 
@@ -22,7 +22,7 @@ This complements the daily review cron — daily reviews catch individual sessio
 
 Before running, verify:
 
-1. `~/.claude/recursive-self-improvement/config.yml` exists. If not: "Run /setup-recursive-self-improvement first to configure your north star and goals."
+1. `~/.claude/recursive-self-improvement/config/config.json` exists. If not: "Run /setup-recursive-self-improvement first to configure categories and goals."
 
 2. `~/.claude` is a git repository:
    ```bash
@@ -30,9 +30,10 @@ Before running, verify:
    ```
    If not: "~/.claude is not a git repo. Run: `cd ~/.claude && git init && git add . && git commit -m 'init'`"
 
-3. `~/.claude/prompts/monthly-review.md` exists. If not, copy from the plugin:
+3. `~/.claude/recursive-self-improvement/config/prompt.md` exists. If not, copy from the plugin:
    ```bash
-   cp "<plugin-base-dir>/prompts/monthly-review.md" ~/.claude/prompts/monthly-review.md
+   mkdir -p ~/.claude/recursive-self-improvement/config
+   cp "<plugin-base-dir>/prompts/monthly-review.md" ~/.claude/recursive-self-improvement/config/prompt.md
    ```
 
 ## Run the agent
@@ -42,8 +43,8 @@ Tell the user: "Running monthly review agent — this may take a few minutes dep
 Run:
 ```bash
 cd ~/.claude && claude --model opus --print \
-  --allowedTools "Read Glob Grep Bash(~/.claude/push-proposals.sh) Write(~/.claude/improvements/*)" \
-  -p "$(cat ~/.claude/prompts/monthly-review.md)" \
+  --allowedTools "Read Glob Grep Bash(~/.claude/push-proposals.sh) Write(~/.claude/recursive-self-improvement/proposals/*)" \
+  -p "$(cat ~/.claude/recursive-self-improvement/config/prompt.md)" \
   | tee -a ~/.claude/logs/review-agent.log
 ```
 

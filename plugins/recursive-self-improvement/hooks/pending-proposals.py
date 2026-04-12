@@ -5,8 +5,8 @@ import os
 import re
 import sys
 
-CONFIG_FILE = os.path.expanduser("~/.claude/recursive-self-improvement/config.yml")
-IMPROVEMENTS_DIR = os.path.expanduser("~/.claude/improvements")
+CONFIG_FILE = os.path.expanduser("~/.claude/recursive-self-improvement/config/config.json")
+IMPROVEMENTS_DIR = os.path.expanduser("~/.claude/recursive-self-improvement/proposals")
 
 def is_configured():
     return os.path.isfile(CONFIG_FILE)

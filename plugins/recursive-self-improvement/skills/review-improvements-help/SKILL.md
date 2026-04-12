@@ -11,26 +11,26 @@ Explain the Recursive Self-Improvement to the user. Cover:
 
 A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours. It looks for:
 
-- **Config improvements** — where Claude misunderstood you, got stuck, or needed rescue. Proposes skills, hooks, CLAUDE.md rules to prevent recurrence.
-- **Automation opportunities** — manual maintenance work you're doing that could run on a schedule.
-- **Wellbeing patterns** — based on your configured alignment signals. Detects zombie/manic mode, rabbit holes, and drift from your goals.
+- **Productivity** — where Claude misunderstood you, got stuck, or needed rescue. Proposes skills, hooks, CLAUDE.md rules to prevent recurrence. Also catches automatable meta-work.
+- **Alignment** — drift from your stated goals and north star. Detects when daily work doesn't connect to what you say matters.
+- **Wellbeing** — based on your configured off-track patterns. Detects manic sessions, zombie mode, rabbit holes, and compulsive loops.
 
 ## How Proposals Work
 
-- Stored in `~/.claude/improvements/` as markdown files
+- Stored in `~/.claude/recursive-self-improvement/proposals/` as markdown files
 - Contain problem descriptions and 1-3 proposed fixes — no log excerpts for security
-- Tagged with category (config/automation/wellbeing) and linked to source log files
+- Tagged with category (productivity/alignment/wellbeing) and linked to source log files
 - Status lifecycle: pending → accepted/rejected/deferred → implemented
 
 ## Commands
 
-- `/setup-recursive-self-improvement` — configure your north star, goals, alignment signals, and schedule
+- `/setup-recursive-self-improvement` — choose categories, set goals and schedule
 - `/review-improvements` — walk through pending proposals interactively
 - `/review-improvements-help` — this help text
 
 ## Configuration
 
-Your config lives at `~/.claude/recursive-self-improvement/config.yml`. Re-run `/setup-recursive-self-improvement` to update it.
+Your config lives at `~/.claude/recursive-self-improvement/config/`. Re-run `/setup-recursive-self-improvement` to update it. The prompt at `config/prompt.md` is your customizable copy — edit it to tune analysis behavior.
 
 ## Security
 

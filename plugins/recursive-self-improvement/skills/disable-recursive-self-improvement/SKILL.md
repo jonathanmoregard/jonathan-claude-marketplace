@@ -12,7 +12,7 @@ Stop or remove the Recursive Self-Improvement loop.
 > "Do you want to:
 > 1. **Pause** — remove the cron jobs only (config and proposals kept, re-run `/setup-recursive-self-improvement` to restart)
 > 2. **Uninstall** — remove cron jobs, config, prompts, and the push script (proposals kept as a record)
-> 3. **Uninstall + wipe** — everything above plus delete all proposals in `~/.claude/improvements/`"
+> 3. **Uninstall + wipe** — everything above plus delete all proposals in `~/.claude/recursive-self-improvement/proposals/`"
 
 Wait for the user's choice before proceeding.
 
@@ -29,16 +29,14 @@ Confirm: "Cron jobs removed."
 Remove config and runtime files:
 
 ```bash
-rm -f ~/.claude/recursive-self-improvement/config.yml
+rm -rf ~/.claude/recursive-self-improvement/config/
 rm -f ~/.claude/push-proposals.sh
-rm -f ~/.claude/prompts/daily-review.md
-rm -f ~/.claude/prompts/monthly-review.md
 ```
 
 ## Step 4: If Uninstall + wipe
 
 ```bash
-rm -rf ~/.claude/improvements/
+rm -rf ~/.claude/recursive-self-improvement/proposals/
 ```
 
 Tell the user: "All proposals deleted."
