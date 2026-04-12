@@ -9,21 +9,17 @@ description: "Configure the Recursive Self-Improvement loop — choose analysis 
 
 Before showing anything to the user, dispatch a subagent to run these checks silently. The subagent should report back a structured result:
 
-**Subagent task:** "Check prerequisites for recursive-self-improvement setup. Report: (1) is ~/.claude a git repo? (2) does ~/.claude/recursive-self-improvement/config/config.json exist? If it exists, read it and return its contents. Return a JSON object: {git_repo: bool, existing_config: null | <config contents>}"
+**Subagent task:** "Check prerequisites for recursive-self-improvement setup. Report: (1) is ~/.claude a git repo? (2) does ~/.claude/recursive-self-improvement/config/config.json exist? If it exists, read it and return its contents. (3) is detect-secrets installed? (check: `which detect-secrets`). Return a JSON object: {git_repo: bool, existing_config: null | <config contents>, detect_secrets_installed: bool}"
 
 ### Handle subagent result
 
-**If `git_repo` is false:** Tell the user:
+**If `git_repo` is false:** Ask the user:
 
-> "The recursive self-improvement loop stores proposals and config in `~/.claude` and requires it to be a git repository (so proposals can be pushed and tracked). It isn't one yet. Run this to set it up:
+> "The plugin stores proposals and config in `~/.claude`. To track changes and push proposals, it works best as a git repository. Want me to set that up now?
 >
-> ```bash
-> cd ~/.claude && git init && git add . && git commit -m 'init'
-> ```
->
-> Then re-run /setup-recursive-self-improvement."
+> This runs: `cd ~/.claude && git init && git add . && git commit -m 'init'`"
 
-**Stop here.** Do not continue setup.
+If yes: run the commands and continue. If no: **stop here** — the plugin requires git.
 
 **If `existing_config` is not null:** Tell the user their current config summary and ask if they want to update it or start fresh. Then proceed to the introduction.
 
@@ -157,17 +153,27 @@ This file is the user's customizable copy. The cron job reads from here, so the 
    mkdir -p ~/.claude/logs
    ```
 
-3. Install analysis cron. Parse `schedule.analysis_cron` from config into hour and minute:
+3. Install the daily analysis cron job. Explain what it does:
+
+   > "Now I'll set up a cron job that runs the analysis agent daily at <analysis_time>. It reads your chat logs, checks them against the categories you chose, and writes improvement proposals. It runs unattended when your machine is on — you'll see new proposals next time you open Claude."
+
+   Parse `schedule.analysis_cron` from config into hour and minute:
    ```bash
    # Remove previous recursive-self-improvement-analysis entry, add new one
    (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" ; echo "0 17 * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/recursive-self-improvement/proposals/*) Glob Grep WebSearch Bash(~/.claude/push-proposals.sh)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/prompt.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # recursive-self-improvement-analysis") | crontab -
    ```
    Adjust `0 17` based on the user's chosen analysis time.
 
-4. Run detect-secrets installation:
+4. **Optional: secret protection.** Check the subagent's `detect_secrets_installed` result. Ask the user:
+
+   > "One more thing — since proposals get committed to git, there's a small risk that the analysis agent accidentally includes sensitive data (API keys, tokens) in a proposal. I can install a pre-commit hook called `detect-secrets` that blocks commits containing anything that looks like a secret. Want me to set that up? (It's a Python tool installed via pip.)"
+
+   If yes:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/install-detect-secrets.sh"
    ```
+
+   If no: skip. If already installed (from pre-flight check): skip and tell the user it's already in place.
 
 5. Remove the setup scratchpad:
    ```bash
