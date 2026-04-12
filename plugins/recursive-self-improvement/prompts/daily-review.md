@@ -89,17 +89,19 @@ project: <project-name> | global
 - **Be specific** — "add a PreToolUse hook that..." not "add a hook"
 - **Cite existing config** when relevant — "settings.json line 42 has a matcher for..."
 
-## Step 5: Review Pass
+## Step 5: Review Pass (subagent)
 
-After writing proposals, do a careful review of each one as if you're the user seeing it for the first time. For each proposal, check:
+After writing proposals, spawn a separate agent to review them with fresh eyes. The reviewing agent has no context from the analysis — it only sees the proposal files and the policy/category reference files.
+
+**Subagent task:** "You are reviewing improvement proposals for quality before they're shown to a user. Read all `pending` proposals in `~/.claude/recursive-self-improvement/proposals/` written today (check the `date` frontmatter). Also read `~/.claude/recursive-self-improvement/config/policy.md` for tone rules. For each proposal, check:
 
 - **Is the problem clearly stated?** Would someone unfamiliar with the specific session understand what went wrong?
 - **Are the fixes actionable?** Could you implement fix #1 right now without asking clarifying questions?
-- **Is the tone right?** No nagging, no shaming, no directives — just observations and options (per policy.md).
-- **Is it high-leverage?** If this is a minor annoyance that happened once, cut it. Keep only findings worth the user's review time.
-- **No duplicates?** Double-check against existing proposals one more time.
+- **Is the tone right?** No nagging, no shaming, no directives — just observations and options (per policy).
+- **Is it high-leverage?** If this is a minor annoyance, delete it. Keep only findings worth the user's review time.
+- **No duplicates?** Check against other proposals in the directory.
 
-Rewrite or remove proposals that don't pass. The user's time reviewing proposals is precious — only ship things that are ready.
+Rewrite proposals that need improvement. Delete proposals that aren't worth the user's time. The user's review time is precious — only ship things that are ready."
 
 ## Step 6: Push
 
