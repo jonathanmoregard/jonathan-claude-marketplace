@@ -79,6 +79,9 @@ project: <project-name> | global
 ## Problem
 [One paragraph — what went wrong or what pattern was detected]
 
+## Relevant existing config
+[List any current settings, hooks, skills, or CLAUDE.md rules that relate to this behaviour — things that might already be trying to address it, or that could be contributing to the problem. If none, write "None found."]
+
 ## Proposed fixes
 1. [Most targeted fix — be specific about what to create/modify and where]
 2. [Alternative approach]
