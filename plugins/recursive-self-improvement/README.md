@@ -11,7 +11,7 @@ A Claude Code plugin that reviews your daily chat logs and writes improvement pr
 
 ## Categories
 
-- **Productivity** — Making Claude better at executing without user involvement. Catches misunderstandings, execution failures, user rescue patterns, and automatable meta-work.
+- **Productivity** — Making Claude better at executing your goals without you needing to hold its hand. Catches misunderstandings, execution failures, user rescue patterns, and automatable meta-work.
 - **Alignment** — Adherence to your goals and north star. Detects drift from what you say matters.
 - **Wellbeing** — Anti-mania, anti-burnout. Detects zombie sessions, late-night marathons, compulsive loops.
 

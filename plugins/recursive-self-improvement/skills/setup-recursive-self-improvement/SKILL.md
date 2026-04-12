@@ -50,7 +50,7 @@ Explain the three proposal categories and ask which the user wants enabled:
 
 > "The improvement loop analyzes your daily Claude usage and writes proposals in three categories:
 >
-> 1. **Productivity** — Making Claude better at executing *how* without your involvement. Detects when Claude misunderstood intent, got stuck, needed rescue, or when you had to take over and paste fixes. Proposes skills, hooks, CLAUDE.md rules, and config changes so Claude handles it autonomously next time.
+> 1. **Productivity** — Making Claude better at executing your goals without you needing to hold its hand. Detects when Claude misunderstood intent, got stuck, needed rescue, or when you had to take over and paste fixes. Proposes skills, hooks, CLAUDE.md rules, and config changes so Claude handles it autonomously next time.
 >
 > 2. **Alignment** — Adherence to your goals and north star. Detects when your daily work drifts from what you say matters. Requires you to define a north star and goals so the agent has something to measure against.
 >
