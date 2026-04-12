@@ -125,7 +125,19 @@ source: monthly-review
 [One concrete suggestion for the biggest lever to pull]
 ```
 
-## Step 6: Push
+## Step 6: Review Pass
+
+After writing proposals, do a careful review of each one as if you're the user seeing it for the first time. For each proposal, check:
+
+- **Is the problem clearly stated?** Would someone unfamiliar with the specific sessions understand what went wrong?
+- **Are the fixes actionable?** Could you implement fix #1 right now without asking clarifying questions?
+- **Is the tone right?** No nagging, no shaming, no directives — just observations and options (per policy.md).
+- **Is it high-leverage?** Only keep findings worth the user's review time.
+- **No duplicates?** Double-check against existing proposals one more time.
+
+Rewrite or remove proposals that don't pass. The user's time reviewing proposals is precious — only ship things that are ready.
+
+## Step 7: Push
 
 If you wrote any proposals, run:
 ```bash
@@ -134,6 +146,6 @@ If you wrote any proposals, run:
 
 If the push fails due to detect-secrets finding something, rewrite the flagged proposal to remove the sensitive content, then retry.
 
-## Step 7: Summary
+## Step 8: Summary
 
 Print a brief summary: how many logs analyzed, date range covered, proposals written, monthly themes written.

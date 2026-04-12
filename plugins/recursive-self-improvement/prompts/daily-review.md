@@ -89,7 +89,19 @@ project: <project-name> | global
 - **Be specific** — "add a PreToolUse hook that..." not "add a hook"
 - **Cite existing config** when relevant — "settings.json line 42 has a matcher for..."
 
-## Step 5: Push
+## Step 5: Review Pass
+
+After writing proposals, do a careful review of each one as if you're the user seeing it for the first time. For each proposal, check:
+
+- **Is the problem clearly stated?** Would someone unfamiliar with the specific session understand what went wrong?
+- **Are the fixes actionable?** Could you implement fix #1 right now without asking clarifying questions?
+- **Is the tone right?** No nagging, no shaming, no directives — just observations and options (per policy.md).
+- **Is it high-leverage?** If this is a minor annoyance that happened once, cut it. Keep only findings worth the user's review time.
+- **No duplicates?** Double-check against existing proposals one more time.
+
+Rewrite or remove proposals that don't pass. The user's time reviewing proposals is precious — only ship things that are ready.
+
+## Step 6: Push
 
 If you wrote any proposals, run:
 ```bash
@@ -98,6 +110,6 @@ If you wrote any proposals, run:
 
 If the push fails due to detect-secrets finding something, rewrite the flagged proposal to remove the sensitive content, then retry.
 
-## Step 6: Summary
+## Step 7: Summary
 
 Print a brief summary of what you found and wrote. This goes to the log file.
