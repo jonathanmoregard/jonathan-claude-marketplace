@@ -46,27 +46,26 @@ Then ask: **"Accept (which fix?), reject, or defer?"**
 ### 3. Handle Response
 
 **Accept:**
-1. Briefly ask: "What made this one resonate?" — understand why, so you can save preferences to memory for the analysis agent to learn from.
-2. The user tells you which fix to implement (or you recommend one and they confirm)
-3. Implement the fix — create/modify the skill, hook, CLAUDE.md rule, memory, or whatever the fix calls for
-4. Test the implementation:
+1. The user tells you which fix to implement (or you recommend one and they confirm)
+2. Implement the fix — create/modify the skill, hook, CLAUDE.md rule, memory, or whatever the fix calls for
+3. Test the implementation:
    - For hooks: run the hook script directly and verify output
    - For skills: check the skill file loads (correct frontmatter, valid markdown)
    - For CLAUDE.md changes: read back the file to confirm
    - For settings.json changes: validate JSON syntax
-5. Present test results to the user
-6. On user approval: commit all changes, push, update proposal `status: implemented`
-7. Save a memory about what kind of proposals the user values (pattern, not specific proposal)
-8. Move to next proposal
+4. Present test results to the user
+5. On user approval: commit all changes, push, update proposal `status: implemented`
+6. Move to next proposal
 
 **Reject:**
-1. Interview — don't push, understand. Ask why they're rejecting. Keep it conversational:
-   - "What's off about this one?"
-   - If the answer is vague: "Is it the problem description that doesn't match your experience, or the proposed fixes that don't feel right?"
-   - If it reveals a preference: note it for memory
-2. Update proposal `status: rejected` (add `rejection_reason: "..."` to frontmatter based on what you learned)
-3. Save a memory about what kind of proposals the user doesn't find useful and why — this helps the analysis agent avoid similar proposals in the future
-4. Move to next proposal
+1. Update proposal `status: rejected`
+2. If this is an **alignment** proposal: interview to understand. The goal isn't to change their mind — it's to understand whether the goals/north star need updating. Keep it conversational:
+   - "How does the work this flagged connect to your goals?"
+   - If it reveals a gap: "Sounds like your goals may have shifted — want me to update the config?"
+   - Save what you learn to memory (goal connections, evolved priorities)
+3. For **other categories**: briefly ask what was off, only if it would help calibrate future proposals. Don't interrogate.
+4. Save a memory about what kind of proposals the user doesn't find useful and why
+5. Move to next proposal
 
 **Defer:**
 1. Update proposal `status: deferred`
