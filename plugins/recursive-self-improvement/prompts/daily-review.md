@@ -54,6 +54,8 @@ Refer to `categories.md` for the detailed "What to flag (daily)" rules per enabl
 
 ## Step 4: Write Proposals
 
+**Scope: global only.** Proposals should target global Claude config (`~/.claude/`) — skills, hooks, CLAUDE.md rules, settings. Do not propose project-specific fixes. If a pattern only applies to one project, generalize it into a global rule or skip it.
+
 For each finding, write a proposal to `~/.claude/recursive-self-improvement/proposals/YYYY-MM-DD-<slug>.md`.
 
 Group related findings — if the same problem shows up across sessions, that's one proposal with multiple source references.
