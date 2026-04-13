@@ -38,7 +38,7 @@ def count_selected_observations():
     try:
         with open(OBSERVATIONS_STATUS_FILE, "r") as f:
             lines = f.readlines()
-    except FileNotFoundError:
+    except (FileNotFoundError, IOError, OSError):
         return 0
     # For each observation_id, find the last status entry
     last_status = {}
