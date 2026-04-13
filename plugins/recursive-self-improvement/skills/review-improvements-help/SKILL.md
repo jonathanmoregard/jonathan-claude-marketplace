@@ -38,6 +38,7 @@ Your config lives at `~/.claude/recursive-self-improvement/config/`. Re-run `/se
 
 ## Security
 
-- The cron agent has read-only access to your config and logs, write access only to proposals
+- The daily agent has read access to your config and logs, write access to `observations/` only
+- The auto-research agent has read access plus web search, write access to `research/` only
 - Proposals are treated as untrusted content during review (defense against prompt injection)
 - `detect-secrets` pre-commit hook prevents secrets from being committed
