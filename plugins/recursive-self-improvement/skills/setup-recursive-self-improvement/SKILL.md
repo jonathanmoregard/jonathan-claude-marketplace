@@ -55,9 +55,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category desc
 >
 > Which categories do you want? (e.g. 'all', '1 and 3', 'productivity and automation')"
 
-### 2. Daily Proposal Limit
+### 2. Review Session Size
 
-> "How many improvement proposals should the daily analysis produce at most? The monthly review is capped at 5. Default is 3."
+> "How many issues should each `/review-improvements` session cover? The daily agent finds 3× this many candidates, then you review the top ones together. Default is 3."
 
 ### 3. North Star (only if alignment is enabled)
 
@@ -98,6 +98,7 @@ Write `~/.claude/recursive-self-improvement/config/config.json` (the install scr
     "wellbeing": true/false
   },
   "daily_proposal_limit": 3,
+  "max_ledger_size_mb": 200,
   "north_star": "<user's response — only if alignment enabled>",
   "current_goals": [
     {
@@ -125,6 +126,26 @@ Check the subagent's `detect_secrets_installed` result. If not already installed
 
 Remember their answer for the install step.
 
+## Optional: LLM Guard
+
+Check if LLM Guard is installed: `python3 -c "import llm_guard" 2>/dev/null`
+
+If not installed, tell the user:
+
+> "This plugin searches the web for mitigations when reviewing issues. To protect against prompt injection in web content, I recommend installing LLM Guard — it scans retrieved content using a local ML model before the agent reasons over it.
+>
+> Install with: `pip install llm-guard`
+>
+> This is optional but strongly recommended. Without it, web research still works but relies on prompt-level protections only."
+
+If the user declines, note this in config:
+
+```json
+{
+  "llm_guard_installed": false
+}
+```
+
 ## Install
 
 Tell the user:
@@ -145,11 +166,3 @@ After the script completes, tell the user:
 >
 > You can customize behavior anytime by editing files in `~/.claude/recursive-self-improvement/config/` — the prompt, policy, and category definitions all live there."
 
-## Offer Monthly Catch-Up
-
-After confirming setup is complete, ask:
-
-> "Want to run a monthly review now to catch up on your history? It'll scan the last 30 days of logs and write proposals for any patterns it finds. This can take a few minutes."
-
-If yes: invoke the `review-month` skill.
-If no: done.
