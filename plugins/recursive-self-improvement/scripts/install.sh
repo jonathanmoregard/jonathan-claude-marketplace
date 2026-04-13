@@ -67,7 +67,7 @@ RESEARCH_MINUTE=$(( (MINUTE + 30) % 60 ))
 RESEARCH_HOUR=$(( (HOUR + (MINUTE + 30) / 60) % 24 ))
 
 echo "Installing auto-research cron job (${RESEARCH_HOUR}:${RESEARCH_MINUTE})..."
-(crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-research" ; echo "${RESEARCH_MINUTE} ${RESEARCH_HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Glob Grep WebSearch WebFetch Write(~/.claude/recursive-self-improvement/research/*)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/auto-research.md)\" >> ~/.claude/logs/research-agent.log 2>&1 # recursive-self-improvement-research") | crontab -
+(crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-research" ; echo "${RESEARCH_MINUTE} ${RESEARCH_HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Glob Grep WebSearch WebFetch Write(~/.claude/recursive-self-improvement/research/*) Bash(python3 ~/.claude/recursive-self-improvement/scripts/scan_content.py*)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/auto-research.md)\" >> ~/.claude/logs/research-agent.log 2>&1 # recursive-self-improvement-research") | crontab -
 
 if [[ "$INSTALL_PRECOMMIT_HOOK" == "true" ]]; then
   echo "Installing pre-commit hook for secret detection..."
