@@ -27,6 +27,13 @@ Finds traces of repetitive "cleanup" work in your sessions that could be handled
 - User manually doing maintenance work that follows a predictable pattern (memory cleanup, CLAUDE.md edits, config reorganization, repo hygiene)
 - **Threshold:** If you'd bet money this will happen again, it's worth flagging. If it only happened once and could easily be a one-off, skip it.
 
+### Default fix mapping (for the research agent)
+See `cc-mechanisms.md` for the full catalog. For automation observations:
+- **Repeated reasoning workflow** (commit drafting, PR review, dotfiles sync, monthly summary) → **auto-triggered skill** via sharp `description` match. Manual `/slash-command` skills are a last resort — user prefers auto-trigger.
+- **Repeated deterministic action** (post-edit lint, block a tool call, inject a reminder) → **hook**.
+- **Unattended scheduled work** → **cron + headless Claude** (`claude -p ... --allowedTools ...`).
+- **Repeated instruction the user has stated 2+ times across sessions** — this is not automation, it's a **CLAUDE.md rule** (see Productivity).
+
 ### What to flag (monthly — persistent patterns only)
 - Any manual task the user performed in two or more separate sessions
 - Tasks that follow the same pattern across weeks — strong automation candidates
