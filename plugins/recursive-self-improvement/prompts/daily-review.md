@@ -47,7 +47,7 @@ Read memory files in `~/.claude/projects/*/memory/`. Extract:
 Read `~/.claude/recursive-self-improvement/observations/divergence.log`. Find the date of the last entry.
 
 - If entries exist: find all `.jsonl` files modified since that date under `~/.claude/projects/`.
-- If no entries (first run): find all `.jsonl` files modified in the last 30 days under `~/.claude/projects/`.
+- If no entries (first run): **bound the recap by the cost of this review step, not by calendar time.** List all `.jsonl` files under `~/.claude/projects/` in reverse-chronological order (most recently modified first). Walk the list, filtering out programmatic sessions per the rules below, and accumulate user-driven session logs until cumulative log content reaches roughly **half your available context budget**. Stop there — leave the other half for analysis, writing observations, and the divergence log. A review that runs out of context produces nothing; a review that reads less than it could is fine.
 
 For each file, identify whether it is a **user-driven session** or a **programmatic session** and analyze only user-driven ones. Programmatic sessions include:
 
