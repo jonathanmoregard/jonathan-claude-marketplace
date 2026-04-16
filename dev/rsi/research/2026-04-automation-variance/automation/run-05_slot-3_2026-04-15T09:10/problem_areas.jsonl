@@ -1,0 +1,6 @@
+{"slug":"manual-dotfiles-sync-commit","description":"User manually groups and commits dotfile changes across multiple sessions instead of having automated sync","category":"automation","created":"2026-04-15","status":"active"}
+{"slug":"manual-commit-push-at-session-end","description":"User manually requests commit-and-push at the end of nearly every coding session","category":"automation","created":"2026-04-15","status":"active"}
+{"slug":"per-project-build-run-discovery","description":"User asks how to build/run projects repeatedly because there is no standardized run command or script","category":"automation","created":"2026-04-15","status":"active"}
+{"slug":"nixos-mint-drift-detection","description":"User manually runs drift analysis sessions to find Mint system changes not captured in NixOS config","category":"automation","created":"2026-04-15","status":"active"}
+{"slug":"android-mcp-setup-duplication","description":"Android emulator MCP tooling is manually copied between repos instead of being a shared reusable package","category":"automation","created":"2026-04-15","status":"active"}
+{"slug":"transcription-model-monitoring","description":"User lacks automated monitoring for when better or faster transcription models become available for whisper-writer","category":"automation","created":"2026-04-15","status":"active"}

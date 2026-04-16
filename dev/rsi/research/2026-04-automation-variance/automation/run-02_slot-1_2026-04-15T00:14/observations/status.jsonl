@@ -1,0 +1,6 @@
+{"id":"OBS-2026-04-15-001","status":"selected","reason":"Highest recurrence signal: 4 sessions with identical dotfiles-commit pattern, broken cron path shows existing automation is fragile."}
+{"id":"OBS-2026-04-15-005","status":"selected","reason":"User explicitly requested this automation (hourly nix config capture agent) and expressed anxiety about state loss. Strong signal of recurring need."}
+{"id":"OBS-2026-04-15-002","status":"selected","reason":"Mint-to-NixOS drift detection was both explicitly requested and manually performed. Clear automation candidate with recurring trigger."}
+{"id":"OBS-2026-04-15-003","status":"selected","reason":"5 sessions of autodoro fixes. While partly development work, the pattern of config-level changes needing code sessions suggests a config-file approach could help."}
+{"id":"OBS-2026-04-15-004","status":"selected","reason":"Security auditing spans 3 sessions. User explicitly asked for weekly cron. Moderate recurrence but high value if automated."}
+{"id":"OBS-2026-04-15-006","status":"selected","reason":"Specific sub-pattern of dotfiles sync: crontab backup. Supplements OBS-001 with a concrete additional scope item."}

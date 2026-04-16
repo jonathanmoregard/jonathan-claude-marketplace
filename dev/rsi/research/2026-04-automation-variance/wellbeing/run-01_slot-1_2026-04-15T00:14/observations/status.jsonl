@@ -1,0 +1,6 @@
+{"id":"OBS-2026-04-15-001","severity":"high","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Strongest manic-mode signal: 26 sessions, 14 hours, two parallel projects on Apr 11"}
+{"id":"OBS-2026-04-15-002","severity":"medium","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Recurring late-night pattern across 4 days in 8 — existing hook insufficient"}
+{"id":"OBS-2026-04-15-003","severity":"medium","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Feast-famine rhythm with 6-day gaps then marathons — no existing mitigation"}
+{"id":"OBS-2026-04-15-004","severity":"low","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Apr 14 multi-project scatter session extending past midnight"}
+{"id":"OBS-2026-04-15-005","severity":"low","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Apr 9 eleven-hour single-project marathon preceding escalation"}
+{"id":"OBS-2026-04-15-006","severity":"info","category":"wellbeing","status":"selected","selected_at":"2026-04-15T00:14:00Z","reason":"Contextual nuance — late-night date-planning is wellbeing-positive"}

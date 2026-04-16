@@ -1,0 +1,3 @@
+{"slug":"manic-marathon-sessions","description":"Multi-hour marathon sessions with 20+ parallel Claude instances on a single day, continuing well past midnight. Signals hyperfocus-driven overwork.","category":"wellbeing","created":"2026-04-15","status":"active"}
+{"slug":"recurring-late-night-work","description":"Repeated late-night Claude usage (after 23:00 local) across multiple days, despite an existing late-night warning hook.","category":"wellbeing","created":"2026-04-15","status":"active"}
+{"slug":"feast-famine-rhythm","description":"Multi-day gaps of zero activity followed by sudden intense bursts. Inconsistent daily rhythm may indicate avoidance-then-overdrive cycles.","category":"wellbeing","created":"2026-04-15","status":"active"}

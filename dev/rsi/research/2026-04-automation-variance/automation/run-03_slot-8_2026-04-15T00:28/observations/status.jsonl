@@ -1,0 +1,5 @@
+{"observation_id":"OBS-2026-04-15-003","status":"selected","date":"2026-04-15","detail":"High severity — recurring cross-session concern with daily drift accumulation and explicit user pain expressed."}
+{"observation_id":"OBS-2026-04-15-001","status":"selected","date":"2026-04-15","detail":"Medium severity — spans two sessions, recurring cache accumulation pattern."}
+{"observation_id":"OBS-2026-04-15-002","status":"selected","date":"2026-04-15","detail":"Medium severity — confirmed recurrence (user stated fix was done before), system config persistence gap."}
+{"observation_id":"OBS-2026-04-15-004","status":"selected","date":"2026-04-15","detail":"Low severity — user-identified need, proposal filed but unbuilt."}
+{"observation_id":"OBS-2026-04-15-005","status":"selected","date":"2026-04-15","detail":"Low severity — partially mitigated in-session, but no cross-repo pattern."}

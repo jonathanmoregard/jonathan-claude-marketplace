@@ -1,0 +1,4 @@
+{"slug":"kindle-mtp-setup-fragility","description":"Kindle/Calibre MTP udev rule breaks and requires manual re-fixing across sessions","category":"automation","created":"2026-04-16","status":"active"}
+{"slug":"autodoro-health-monitoring","description":"User manually checks if Autodoro break-timer service is running instead of automated health check","category":"automation","created":"2026-04-16","status":"active"}
+{"slug":"artcraft-pull-build-workflow","description":"Repeated manual git-pull-then-build steps for artcraft project with no shortcut","category":"automation","created":"2026-04-16","status":"active"}
+{"slug":"voice-memo-to-action-pipeline","description":"Processing voice transcriptions from phone into structured actions is done manually, pending automation","category":"automation","created":"2026-04-16","status":"active"}

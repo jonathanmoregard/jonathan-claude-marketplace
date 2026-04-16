@@ -1,0 +1,12 @@
+# Slot 2: 04:10 2026-04-15
+10 4 15 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 2 1 2 1
+# Slot 3: 09:10 2026-04-15
+10 9 15 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 3 2 1 1
+# Slot 4: 14:10 2026-04-15
+10 14 15 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 4 1 2 1
+# Slot 5: 19:10 2026-04-15
+10 19 15 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 5 2 1 1
+# Slot 6: 00:10 2026-04-16
+10 0 16 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 6 2 1 1
+# Slot 7: 05:10 2026-04-16
+10 5 16 4 * /tmp/rsi-runs/scheduler/fire-slot.sh 7 1 1 2

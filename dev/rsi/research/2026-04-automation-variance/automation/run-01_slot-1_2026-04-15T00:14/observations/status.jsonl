@@ -1,0 +1,6 @@
+{"id":"OBS-2026-04-15-001","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":1,"rationale":"Highest recurrence (6+ sessions with identical prompt), user explicitly requested automation, existing skill not wired up"}
+{"id":"OBS-2026-04-15-003","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":2,"rationale":"5 sessions, user tried and failed to automate, partial infrastructure exists but pipeline incomplete"}
+{"id":"OBS-2026-04-15-006","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":3,"rationale":"User explicitly asked for automation, ongoing Mint-to-NixOS migration makes this increasingly important"}
+{"id":"OBS-2026-04-15-002","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":4,"rationale":"5 sessions with manual MCP verification, scripts exist but no session-start auto-check"}
+{"id":"OBS-2026-04-15-004","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":5,"rationale":"3 sessions, lower recurrence but each release cycle is painful, CI partially exists"}
+{"id":"OBS-2026-04-15-005","status":"selected","selected_at":"2026-04-14T22:20:44Z","rank":6,"rationale":"2 sessions, growing pattern as more projects adopt harness, but still early signal"}
