@@ -28,7 +28,6 @@ Read `~/.claude/recursive-self-improvement/config/config.json`. Note `daily_prop
 
 Read:
 - `~/.claude/recursive-self-improvement/observations/observations.jsonl`
-- `~/.claude/recursive-self-improvement/observations/problem_areas.jsonl`
 - `~/.claude/recursive-self-improvement/observations/status.jsonl`
 
 Find all observations with status `selected` (last entry in status.jsonl for that ID).
@@ -37,7 +36,7 @@ For each automation/productivity observation, check for a research brief at `~/.
 
 If no selected observations: "No observations selected for review. The daily agent runs on your schedule — check back after the next run."
 
-Pick the top `daily_proposal_limit` by severity tier. Within the same tier, prefer observations whose problem areas have more total observations.
+Pick the top `daily_proposal_limit` by severity tier. Within the same tier, group selected observations by `intent` similarity (read-time clustering — do not persist) and prefer observations that belong to larger clusters.
 
 > "Today's review: [N] observations across [categories]. Let's start."
 
@@ -57,7 +56,7 @@ If no research brief exists at `~/.claude/recursive-self-improvement/research/OB
 
 If a research brief exists, present:
 
-> **[category] — [date] — problem areas: [slugs]**
+> **[category] — [date] — intent: [intent text]**
 >
 > **Issue:** [finding text]
 >
@@ -101,7 +100,7 @@ The user can say "skip" or "not now" at any point during the review. If skipped:
 
 **2a. Present the observation**
 
-> **[category] — [date] — problem areas: [slugs]**
+> **[category] — [date] — intent: [intent text]**
 >
 > **Issue:** [finding text]
 >

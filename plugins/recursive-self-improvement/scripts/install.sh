@@ -23,7 +23,7 @@ mkdir -p "$TARGET/recursive-self-improvement/config"
 mkdir -p "$TARGET/logs"
 
 # Initialize observation files if they don't exist
-for f in observations/observations.jsonl observations/problem_areas.jsonl \
+for f in observations/observations.jsonl \
          observations/status.jsonl observations/divergence.log; do
   if [[ ! -f "$TARGET/recursive-self-improvement/$f" ]]; then
     touch "$TARGET/recursive-self-improvement/$f"
