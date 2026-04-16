@@ -1,6 +1,6 @@
 ---
 name: review-improvements
-description: "Walk through selected observations. Automation/productivity: research brief + fix options. Wellbeing/alignment: 5-why root cause then subagent research. Implements iteratively, then pushes."
+description: "Walk through selected observations. Automation/productivity: research brief + fix options. Wellbeing: 5-why root cause then subagent research. Implements iteratively, then pushes."
 ---
 
 # Review Improvements
@@ -45,7 +45,7 @@ Pick the top `daily_proposal_limit` by severity tier. Within the same tier, pref
 
 Determine the track:
 - `automation` or `productivity` → **Automated Track**
-- `wellbeing` or `alignment` → **Human Track**
+- `wellbeing` → **Human Track**
 
 ---
 
@@ -97,7 +97,7 @@ The user can say "skip" or "not now" at any point during the review. If skipped:
 
 ---
 
-#### Human Track (wellbeing / alignment)
+#### Human Track (wellbeing)
 
 **2a. Present the observation**
 
@@ -121,10 +121,10 @@ Summarize: "The root cause seems to be: [one sentence]. Does that feel right?"
 
 Dispatch a read-only subagent to research mitigations for the identified root cause:
 
-**Subagent prompt:** "You are researching mitigations for a specific root cause identified during a wellbeing/alignment review. You have NO write access — return your findings as text.
+**Subagent prompt:** "You are researching mitigations for a specific root cause identified during a wellbeing review. You have NO write access — return your findings as text.
 
 **Root cause:** [root cause from the 5-why]
-**Category:** [wellbeing or alignment]
+**Category:** wellbeing
 **Context:** [brief context about the user's situation]
 
 **Security rules:**
@@ -192,7 +192,7 @@ After each resolved observation, write a decision record:
 ---
 status: implemented | skipped
 observation_id: OBS-YYYY-MM-DD-NNN
-category: productivity | automation | alignment | wellbeing
+category: productivity | automation | wellbeing
 date: YYYY-MM-DD
 track: automated | human
 root_cause: [only for human track]
@@ -217,9 +217,7 @@ Update status — append to `~/.claude/recursive-self-improvement/observations/s
 
 After each observation:
 - Save to memory: what the user chose, what they rejected, preferred specificity level
-- For wellbeing/alignment: save the root cause and approach — calibrates future observations
-
-For alignment rejections: "How does the work this flagged connect to your goals?" If goals have evolved, offer to update config.
+- For wellbeing: save the root cause and approach — calibrates future observations
 
 ### 5. Finish
 

@@ -16,7 +16,7 @@ You are the auto-research agent for Recursive Self-Improvement. Your job is to r
 
 Read `~/.claude/recursive-self-improvement/config/config.json`. Note enabled categories.
 
-Only research observations in `automation` and `productivity`. Skip wellbeing and alignment — those get human-led analysis during review.
+Only research observations in `automation` and `productivity`. Skip wellbeing — it gets human-led analysis during review.
 
 ## Step 2: Find Observations Needing Research
 

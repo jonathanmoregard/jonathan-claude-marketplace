@@ -43,15 +43,13 @@ Ask these questions **one at a time**. Wait for the user's response before askin
 
 Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category descriptions. Present a summary to the user:
 
-> "The plugin can help you with four areas:
+> "The plugin can help you with three areas:
 >
 > 1. **Productivity** — Making Claude better at acting without you there holding its hand. Proposes config changes so Claude handles things autonomously next time.
 >
 > 2. **Automation** — Finds repetitive cleanup work in your sessions that a script or cron job could handle instead.
 >
-> 3. **Alignment** — Are you working on your goals, or drifting? Reviews your daily work against your stated north star. You get proposals, not orders.
->
-> 4. **Wellbeing** — Spots patterns that disrupt your wellbeing. Anti-mania, anti-burnout, healthy rhythms.
+> 3. **Wellbeing** — Spots patterns that disrupt your wellbeing. Anti-mania, anti-burnout, healthy rhythms.
 >
 > Which categories do you want? (e.g. 'all', '1 and 3', 'productivity and automation')"
 
@@ -59,27 +57,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category desc
 
 > "How many issues should each `/review-improvements` session cover? The daily agent finds 3× this many candidates, then you review the top ones together. Default is 3."
 
-### 3. North Star (only if alignment is enabled)
-
-Skip this question if the user did NOT select the alignment category.
-
-> "What's your north star — the deeper purpose or direction that guides your choices? This is the lens the review agent uses to assess whether your daily work is aligned."
-
-### 4. Current Goals (only if alignment is enabled)
-
-Skip this question if the user did NOT select the alignment category.
-
-> "What are your current concrete goals? What are you working on right now — across work, health, relationships, creative projects, or anything else?"
-
-**After the user answers:** For each goal or goal category, interview the user about how it connects to their north star. Don't just ask once — keep inquiring until you genuinely understand the relationship. For example:
-
-- "How does [goal] relate to [north star aspect]?"
-- If the answer is vague: "Can you give me a concrete example of how working on [goal] moves you toward [north star]?"
-- If it's an indirect path: "So the chain is [goal] → [intermediate outcome] → [north star aspect]? Do I have that right?"
-
-Continue until you can articulate the connection yourself. Then confirm your understanding with the user. Save each goal group with its `connection` field in config so the daily agent understands why the user is working on it.
-
-### 5. Analysis Schedule
+### 3. Analysis Schedule
 
 > "When should the analysis agent run? This is the cron job that reads your chat logs and writes improvement proposals — it runs unattended when your computer is on. Default is 17:00 (5 PM). Enter a time in 24h format, or say 'default' for 17:00."
 
@@ -94,27 +72,16 @@ Write `~/.claude/recursive-self-improvement/config/config.json` (the install scr
   "categories": {
     "productivity": true/false,
     "automation": true/false,
-    "alignment": true/false,
     "wellbeing": true/false
   },
   "daily_proposal_limit": 3,
   "max_ledger_size_mb": 200,
-  "north_star": "<user's response — only if alignment enabled>",
-  "current_goals": [
-    {
-      "category": "<category>",
-      "items": ["<goal>", "<goal>"],
-      "connection": "<how this category of goals connects to the north star>"
-    }
-  ],
   "schedule": {
     "analysis_cron": "17:00",
     "timezone": "<detected or asked>"
   }
 }
 ```
-
-Only include `north_star` and `current_goals` if alignment is enabled.
 
 Note: `off_track_patterns` is not configured during setup. It emerges over time as the review agent learns from the user's accept/reject decisions and conversations during `/review-improvements`.
 

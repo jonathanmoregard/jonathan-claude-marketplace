@@ -6,7 +6,7 @@ You are the issue-writing agent for Recursive Self-Improvement. Your job is to f
 
 Read and note:
 
-1. `~/.claude/recursive-self-improvement/config/config.json` — note: enabled categories, `daily_proposal_limit` (issues per review session), `max_ledger_size_mb`, north star, goals with `connection` fields
+1. `~/.claude/recursive-self-improvement/config/config.json` — note: enabled categories, `daily_proposal_limit` (issues per review session), `max_ledger_size_mb`
 2. `~/.claude/recursive-self-improvement/config/policy.md` — tone rules
 3. `~/.claude/recursive-self-improvement/config/categories.md` — what to flag per enabled category
 
@@ -45,10 +45,18 @@ Read memory files in `~/.claude/projects/*/memory/`. Extract:
 
 Read `~/.claude/recursive-self-improvement/observations/divergence.log`. Find the date of the last entry.
 
-- If entries exist: find all `.jsonl` files modified since that date under `~/.claude/projects/`, excluding `subagents/` directories.
-- If no entries (first run): find all `.jsonl` files modified in the last 30 days under `~/.claude/projects/`, excluding `subagents/` directories.
+- If entries exist: find all `.jsonl` files modified since that date under `~/.claude/projects/`.
+- If no entries (first run): find all `.jsonl` files modified in the last 30 days under `~/.claude/projects/`.
 
-If no logs found: append divergence log entry with all zeros and stop.
+For each file, identify whether it is a **user-driven session** or a **programmatic session** and analyze only user-driven ones. Programmatic sessions include:
+
+- **Subagent logs** — anything under a `subagents/` directory.
+- **Headless / scheduled / hook-fired runs** — identifiable by: first user message is a long programmatic instruction that names its own purpose, addresses the agent in third person, or declares a role ("You are the CONTROLLER...", "Scheduled agent:", "Variance test:"); no interactive back-and-forth, just one briefing then tool calls and a summary; session start times cluster on cadence boundaries (e.g., every N hours at the same minute).
+- **Self-referential runs** — sessions that themselves execute `daily-review.md`, other RSI prompts, or variance/evaluation harnesses.
+
+If unsure, inspect the first 1–2 messages: conversational openers ("can you...", "look at...", terse commands, typos) are human; structured multi-paragraph briefings with explicit role framing are programmatic.
+
+If no user-driven logs found: append divergence log entry with all zeros and stop.
 
 ## Step 6: Analyze
 
@@ -68,11 +76,18 @@ See `categories.md` for full rules. For each finding, judge its severity:
 
 **Prioritize by resources wasted.** Judge severity primarily by how much human time and wellbeing it costs — a pattern that eats the user's time or causes frustration outweighs most other concerns. Token waste matters too — an issue that burns through context without progress is real waste, just less urgent than human cost. Assign each finding a priority tier: **critical**, **high**, **medium**, or **low**.
 
+**Severity anchors — pin your judgment to what you can count.** Do not rate by gut feel alone.
+
+- **critical** — user is actively blocked or explicitly frustrated ("why doesn't this work", "I keep having to do this", repeated retries in one session); or a wellbeing pattern that has already caused visible harm (missed break, hit midnight boundary, explicit fatigue).
+- **high** — recurs ≥5 times in the window **AND** either (a) the user has explicitly asked for automation / a fix, or (b) an `existing_mitigation` exists but is broken.
+- **medium** — recurs 3–4 times, **OR** recurs twice with an explicit user request to automate, **OR** has a clear existing_mitigation gap.
+- **low** — recurs 2 times with no explicit request, or a single strong instance worth noting but not acting on yet.
+
+If evidence spans more than one tier (e.g. "5 occurrences but no explicit ask"), pick the lower tier and note the tension in the `finding` text. Err downward, not upward — under-severity gets corrected on the next run; over-severity wastes the proposal funnel.
+
 - **Productivity:** Claude needed rescuing — user stepped in with fixes, provided paths Claude should have found, corrected tool calls, rephrased the same request two or more times. Frustration signals are pointers — find the root cause.
 
-- **Automation:** User doing predictable maintenance work manually. Would you bet money this happens again? If yes, it's waste.
-
-- **Alignment:** Work with no connection to any stated goal. Check `connection` fields before flagging.
+- **Automation:** Task-oriented waste. User doing concrete tasks by hand that a single durable artifact (skill/hook/cron/template/script/config) could handle once-and-for-all. See `categories.md` for the three-question test and the task-vs-interaction split — interaction findings go to productivity.
 
 - **Wellbeing:** Analyze session timestamps. Observable off-track signatures:
   - *Zombie mode* — session starts with clear goal, trails into vague redirects; many short exchanges with no progress; Claude completes tasks but user immediately redirects without closure

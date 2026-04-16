@@ -1,6 +1,6 @@
 # Recursive Self-Improvement
 
-A Claude Code plugin that reviews your daily chat logs and writes improvement proposals in four categories: productivity, automation, alignment, and wellbeing.
+A Claude Code plugin that reviews your daily chat logs and writes improvement proposals in three categories: productivity, automation, and wellbeing.
 
 ## How it works
 
@@ -13,7 +13,6 @@ A Claude Code plugin that reviews your daily chat logs and writes improvement pr
 
 - **Productivity** — Making Claude better at executing your goals without you needing to hold its hand. Catches misunderstandings, execution failures, and user rescue patterns.
 - **Automation** — Finds repetitive cleanup work in your sessions that a script or cron job could handle.
-- **Alignment** — Are you working on your goals, or drifting? Reviews daily work against your stated north star.
 - **Wellbeing** — Anti-mania, anti-burnout. Detects zombie sessions, late-night marathons, compulsive loops.
 
 You choose which categories to enable during setup.
@@ -35,11 +34,10 @@ claude plugins install <path-or-url>
 
 Run `/setup-recursive-self-improvement` in any Claude session. The wizard:
 
-1. Explains the four categories and asks which to enable
+1. Explains the three categories and asks which to enable
 2. Asks daily proposal limit
-3. If alignment enabled: asks north star and goals (validates goal–north star connection)
-4. If wellbeing enabled: asks off-track patterns
-5. Sets cron schedule
+3. If wellbeing enabled: asks off-track patterns
+4. Sets cron schedule
 
 Configuration is saved to `~/.claude/recursive-self-improvement/config/config.json`. The analysis prompt is at `config/prompt.md` — edit it to customize behavior.
 

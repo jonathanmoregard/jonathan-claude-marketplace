@@ -4,60 +4,48 @@
 
 Making Claude better at executing your goals without you needing to hold its hand. Detects when Claude misunderstood intent, got stuck, needed rescue, or when you had to take over and paste fixes. Proposes skills, hooks, CLAUDE.md rules, and config changes so Claude handles it autonomously next time.
 
-### What to flag (daily)
+### What to flag
 - **Misunderstandings:** Claude misinterpreted intent and went down the wrong path
 - **Execution failures:** Claude got stuck, retried the same failing approach, or needed user rescue
 - **User taking over:** User pasting fixes, providing file paths Claude should have found, correcting tool calls, debugging Claude's work
 - **Repetition signals:** User rephrasing the same request two or more times — this means Claude isn't understanding, not that the user is being unclear
 - **Frustration/anger:** Treat as a pointer. Curt corrections, "no", "wrong", "that's not what I asked" point to an underlying problem — find it and propose the fix, not the symptom
-
-### What to flag (monthly — persistent patterns only)
-- **Recurring misunderstandings:** Claude repeatedly misinterpreted the same type of intent across sessions
-- **Systemic execution failures:** Claude got stuck in the same way across multiple sessions
-- **Persistent user rescue patterns:** User repeatedly stepping in to fix the same class of problem
-- **Frustration patterns:** The same frustration signal recurring across multiple sessions — what's the root cause?
+- **Interaction friction (autonomy):** How the user interacts with Claude — session handoff, context reload, prompt repetition for the same intent, correcting Claude's tool choice, model routing, rescuing stuck Claude. These are productivity findings, not automation.
 
 ---
 
 ## Automation
 
-Finds traces of repetitive "cleanup" work in your sessions that could be handled automatically. Things like manual memory maintenance, config reorganization, repo hygiene tasks, or anything you do more than once that a script or hook could handle.
+Task-oriented waste. Finds concrete tasks the user is doing by hand that automation could handle once-and-for-all next time.
 
-### What to flag (daily)
-- User manually doing maintenance work that follows a predictable pattern (memory cleanup, CLAUDE.md edits, config reorganization, repo hygiene)
-- **Threshold:** If you'd bet money this will happen again, it's worth flagging. If it only happened once and could easily be a one-off, skip it.
+### Scope: task, not interaction
 
-### Default fix mapping (for the research agent)
-See `cc-mechanisms.md` for the full catalog. For automation observations:
-- **Repeated reasoning workflow** (commit drafting, PR review, dotfiles sync, monthly summary) → **auto-triggered skill** via sharp `description` match. Manual `/slash-command` skills are a last resort — user prefers auto-trigger.
-- **Repeated deterministic action** (post-edit lint, block a tool call, inject a reminder) → **hook**.
-- **Unattended scheduled work** → **cron + headless Claude** (`claude -p ... --allowedTools ...`).
-- **Repeated instruction the user has stated 2+ times across sessions** — this is not automation, it's a **CLAUDE.md rule** (see Productivity).
+Ask three questions in order:
 
-### What to flag (monthly — persistent patterns only)
-- Any manual task the user performed in two or more separate sessions
-- Tasks that follow the same pattern across weeks — strong automation candidates
-- Cleanup work that appears reliably enough that a cron job or hook would reliably catch it
+1. **What is the purpose of the thing the user is doing?** Name the outcome, not the execution. ("Sync dotfiles to remote" — outcome. "Get Claude to stop using adb" — execution, not an outcome.)
+2. **Would it recur?** Do you think the user (or anyone in their position) would do another task to reach a similar goal? One-offs don't count.
+3. **Could automation, built once, replace the manual work for all future instances?** If yes, there's a lever. If the fix is "Claude should be smarter" — it's not automation.
 
----
+All three yes → automation candidate. Any no → skip or route elsewhere.
 
-## Alignment
+### What goes elsewhere
 
-Are you working on your goals, or drifting? The review agent checks your daily work against your stated north star and goals, and flags when sessions seem disconnected from what you said matters.
+If the finding is about *how* the user interacts with Claude — session handoff, context reload, prompt repetition, correcting Claude's tool choice, model routing, rescuing stuck Claude — that's **productivity**, not automation. File it there.
 
-Requires defining a north star and goals during setup.
+### Collection posture: err broad within the zone
 
-### What to flag (daily)
-- Work with no visible connection to any stated goal or north star
-- **Important:** Check the `connection` field on each goal in config.json before flagging. If the user has pre-explained how a particular type of work connects to their north star, respect that explanation and skip.
-- Rabbit holes — sessions that started on-track but drifted into tangents. Frame as "this seems off-track" or "consider updating goals if this is intentional."
-- If multiple alignment proposals are rejected in a row, suggest the user re-run `/setup-recursive-self-improvement` to review their north star and goals — they may have evolved
+We are collecting data to learn what automation looks like for this user. Do not force findings into pre-existing shapes. Do not cluster by surface features (repo name, tool, language); **cluster by goal** — group different instances that have very similar goals. When the boundary between "this recurs" and "this was a one-off" is fuzzy, write it and let downstream review decide.
 
-### What to flag (monthly — persistent patterns only)
-- **Monthly-scale drift:** Is the user consistently spending time on work disconnected from stated goals?
-- **Rabbit hole weeks:** Entire weeks spent on tangents with no connection to stated mission?
-- **Goal coverage:** Are any stated goals going completely unworked? Is the user's actual focus shifting away from declared priorities?
-- Same rule applies — check each goal's `connection` field before flagging
+### Per finding, record
+
+- **Goal**: the outcome the user was pursuing, in their own terms where possible
+- **Surface of recurrence**: where it repeats — same context, across contexts, across time
+
+### What to skip
+
+- One-off tasks with no recurrence signal
+- Interaction patterns (→ productivity)
+- Tasks the user appears to be doing manually for tactile/judgment reasons (check accept/reject memory)
 
 ---
 
@@ -86,14 +74,8 @@ Off-track patterns are **not configured during setup** — they emerge from acce
 - Long gaps in activity followed by sudden intense bursts
 - Declining session quality over consecutive days
 
-### What to flag (daily)
+### What to flag
 - Check memories for confirmed off-track patterns first. Only flag what the user has already validated or what's a clear match to the above signatures.
 - Analyze session timestamps and interaction patterns — these are the evidence
 - Look for zombie/manic/burnout signatures above
 - Don't flag a single late session. Look for patterns.
-
-### What to flag (monthly — persistent patterns only)
-- **Session timing patterns:** Late-night sessions clustering in certain weeks? Breaks disappearing over the month?
-- **Positive patterns worth reinforcing:** Weeks where sessions went especially well — what made them work? These are worth naming.
-- Check memories for confirmed off-track patterns
-- Don't introduce new off-track pattern categories without evidence the user would agree
