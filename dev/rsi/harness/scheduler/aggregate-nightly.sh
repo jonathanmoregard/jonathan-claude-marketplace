@@ -22,7 +22,7 @@ Inputs:
 What to produce at $PROPOSAL:
 
 ---
-status: info
+status: pending
 category: nightly-variance
 date: 2026-04-20
 ---
