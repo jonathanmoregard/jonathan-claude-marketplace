@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "productivity": true,
+    "automation": true,
+    "wellbeing": true
+  },
+  "daily_proposal_limit": 2,
+  "max_ledger_size_mb": 50,
+  "schedule": {
+    "analysis_cron": "17:00",
+    "timezone": "Europe/Stockholm"
+  }
+}

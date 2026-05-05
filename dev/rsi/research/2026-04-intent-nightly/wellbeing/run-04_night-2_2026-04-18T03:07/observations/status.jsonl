@@ -1,0 +1,4 @@
+{"id":"OBS-2026-04-18-001","status":"selected","category":"wellbeing","severity":"high","cluster":"late-night-boundary-hook-ignored","intent":"hand off intender-app polish to an autonomous agent before going to sleep"}
+{"id":"OBS-2026-04-18-002","status":"selected","category":"wellbeing","severity":"medium","cluster":"past-midnight-work","intent":"make the RSI nightly variance test harness ready before a planned rest day"}
+{"id":"OBS-2026-04-18-003","status":"selected","category":"wellbeing","severity":"medium","cluster":"manic-mode-fragmentation","intent":"juggle router-agent setup, Claude config tweaks, and intender work across many parallel tabs in one morning"}
+{"id":"OBS-2026-04-18-004","status":"selected","category":"wellbeing","severity":"medium","cluster":"marathon-day-recurrence","intent":"keep making progress on multiple apps (intender, router-agent, whisper-writer, jhana, nixos-config) across a single long day"}
