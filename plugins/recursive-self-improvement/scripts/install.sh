@@ -22,6 +22,18 @@ mkdir -p "$TARGET/recursive-self-improvement/research"
 mkdir -p "$TARGET/recursive-self-improvement/config"
 mkdir -p "$TARGET/logs"
 
+# Unified proposals folder — aggregation surface scanned by the SessionStart hook
+# and walked by /review-improvements. Drop any new subdir here and it auto-appears
+# in the next nudge; see hooks/pending-proposals.py DEFAULTS for the config keys.
+mkdir -p "$TARGET/proposals"
+# Seed rsi subdir as a symlink to the legacy dir so the plugin's daily prompt
+# (which writes to the legacy path) and the multi-subdir hook see the same files.
+# Only touch when rsi/ doesn't exist yet OR is already a symlink — never overwrite
+# a real dir a user has curated by hand.
+if [[ ! -e "$TARGET/proposals/rsi" || -L "$TARGET/proposals/rsi" ]]; then
+  ln -sfn "$TARGET/recursive-self-improvement/proposals" "$TARGET/proposals/rsi"
+fi
+
 # Initialize observation files if they don't exist
 for f in observations/observations.jsonl observations/problem_areas.jsonl \
          observations/status.jsonl observations/divergence.log; do
