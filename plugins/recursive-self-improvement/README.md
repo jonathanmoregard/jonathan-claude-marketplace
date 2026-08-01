@@ -65,6 +65,7 @@ Configuration is saved to `~/.claude/recursive-self-improvement/config/config.js
 - **No direct git** — a hardcoded `push-proposals.sh` script handles git operations
 - **No WebFetch/WebSearch** — both are globally denied on this setup, and a global deny beats any `--allowedTools` grant (verified 2026-08-01), so the research cron routes external lookups through the sandboxed `mcp__research-agent__research` MCP tool instead
 - **Intake gate scorer is read-only** — `Read Grep Glob` only; the trusted gate script does all writing
+- **Push is gate-mandatory** — `push-proposals.sh` hard-fails (exit 1) when the gate script is missing instead of pushing ungated proposals; reinstall via the plugin's `scripts/install.sh`. Emergency bypass for a broken install: `PROPOSAL_GATE_ALLOW_MISSING=1 ~/.claude/push-proposals.sh` — use it knowingly and reinstall the gate afterwards. A *partial* batch (gate exit 4) is never bypassable: rerun the gate.
 - Proposals contain **no log excerpts** — only links to log files
 - Proposals treated as **untrusted content** in the review skill (defense against prompt injection from logs)
 - **`detect-secrets`** pre-commit hook blocks secrets from being committed anywhere
