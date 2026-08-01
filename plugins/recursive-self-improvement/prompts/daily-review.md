@@ -80,6 +80,8 @@ See `categories.md` for full rules. For each finding, judge its severity:
   - *Burnout* — very short sessions, many abandoned, long gaps then intense bursts
   - Check memories for confirmed off-track patterns first. Don't flag a single late session.
 
+- **Verification:** Work claimed complete without evidence — tests not run, output not observed, "should work" shipped, or success reported and then contradicted later in the transcript.
+
 ### Existing mitigation check
 
 For each finding, before writing:

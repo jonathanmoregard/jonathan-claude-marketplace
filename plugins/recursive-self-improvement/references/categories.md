@@ -97,3 +97,20 @@ Off-track patterns are **not configured during setup** — they emerge from acce
 - **Positive patterns worth reinforcing:** Weeks where sessions went especially well — what made them work? These are worth naming.
 - Check memories for confirmed off-track patterns
 - Don't introduce new off-track pattern categories without evidence the user would agree
+
+---
+
+## Verification
+
+Flags moments where work was claimed complete without evidence. Anthropic's June-2026 finding: verification-class skills have the most measurable impact on output quality — catching "should work" before it ships is the highest-leverage class of fix.
+
+### What to flag (daily)
+- **Tests not run:** Code changed and completion claimed with no test, build, or lint command anywhere in the transcript
+- **Output not observed:** Claude reports success without reading the command output, rendered page, or generated file it claims to have produced
+- **"Should work" shipped:** Completion phrased as expectation — "this should fix it", "that ought to work" — rather than observed result
+- **Contradicted claims:** Success reported, then the same transcript (or a later session) shows the thing broken. The strongest signal in this category — flag it even on a single occurrence
+
+### What to flag (monthly — persistent patterns only)
+- The same unverified-completion pattern recurring across sessions — e.g. Claude repeatedly skipping the project's test suite before declaring done
+- Projects or workflows where verification is systematically absent — candidates for a verify-before-done hook or CLAUDE.md rule
+- User repeatedly catching regressions that a check right after the edit would have caught
