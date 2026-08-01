@@ -3,7 +3,7 @@
   "spine_root": "~/.claude/proposals",
   "subdirs": [],
   "excluded_subdirs": [".*", "archived"],
-  "excluded_files": ["README*", ".*"],
+  "excluded_files": ["README*", ".*", "on-decision", "on-decision.*"],
   "scorer": {
     "model": "claude-fable-5",
     "fallback_model": "opus",
