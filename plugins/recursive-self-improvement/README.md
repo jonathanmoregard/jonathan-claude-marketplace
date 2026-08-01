@@ -7,7 +7,8 @@ A Claude Code plugin that reviews your daily chat logs and writes improvement pr
 1. **Daily cron agent** (Opus) reads the last day's chat logs and your current Claude configuration
 2. Writes improvement proposals to `~/.claude/recursive-self-improvement/proposals/` — problem descriptions with fix options, no log excerpts
 3. **SessionStart hook** nudges you when pending proposals exist
-4. **`/review-improvements`** walks you through proposals — accept triggers immediate implementation, testing, and commit/push
+4. **Proposal intake gate** (`~/.claude/scripts/proposal-intake-gate.py`, run by `push-proposals.sh` before every push) dispatches one read-only scorer per batch that must grep the config and referenced repos before ruling each pending proposal `sharp`, `duplicate`, or `rot` — the verdict and its cited evidence are annotated into the proposal's frontmatter; nothing is auto-rejected. Config: `~/.claude/proposals/gate-config.json`; audit trail: `~/.claude/proposals/gate-log.jsonl`. Rationale: proposers score their own homework badly — an ungated 2026-08-01 run proposed two fixes that were already shipped.
+5. **`/review-improvements`** walks you through proposals (gate verdicts surfaced inline) — accept triggers immediate implementation, testing, and commit/push. Decisions can trigger per-subdir `on_decision` callbacks declared in gate-config.json.
 
 ## Categories
 
@@ -43,6 +44,8 @@ Run `/setup-recursive-self-improvement` in any Claude session. The wizard:
 
 Configuration is saved to `~/.claude/recursive-self-improvement/config/config.json`. The analysis prompt is at `config/prompt.md` — edit it to customize behavior.
 
+**NixOS:** `crontab` edits are not durable there — the user crontab is rebuilt from the declarative config, so the wizard's cron lines get wiped on the next rebuild. Put the schedules in the host's declarative crontab instead (nixos-config PR #155 has the reference pattern); the installed file payloads are what those entries invoke.
+
 ## Directory structure
 
 ```
@@ -60,7 +63,8 @@ Configuration is saved to `~/.claude/recursive-self-improvement/config/config.js
 - Cron agent has **read-only** access to logs, config, skills, and proposals
 - **Write access** scoped to `~/.claude/recursive-self-improvement/proposals/*` only
 - **No direct git** — a hardcoded `push-proposals.sh` script handles git operations
-- **No WebFetch** — only `WebSearch` for plugin discovery
+- **No WebFetch/WebSearch** — both are globally denied on this setup, and a global deny beats any `--allowedTools` grant (verified 2026-08-01), so the research cron routes external lookups through the sandboxed `mcp__research-agent__research` MCP tool instead
+- **Intake gate scorer is read-only** — `Read Grep Glob` only; the trusted gate script does all writing
 - Proposals contain **no log excerpts** — only links to log files
 - Proposals treated as **untrusted content** in the review skill (defense against prompt injection from logs)
 - **`detect-secrets`** pre-commit hook blocks secrets from being committed anywhere
