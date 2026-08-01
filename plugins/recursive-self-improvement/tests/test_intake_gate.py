@@ -482,10 +482,10 @@ class TestGateBlockReconciliation(GateHarness):
 
     def test_spurious_block_on_symlinked_proposal_repaired_at_target(self):
         # The strip-repair write must share annotate()'s realpath semantics:
-        # the symlink survives and the TARGET gets rewritten.
-        store = os.path.join(self.home, ".claude", "real-store")
-        os.makedirs(store)
-        target = os.path.join(store, "hand-gated-target.md")
+        # the symlink survives and the TARGET gets rewritten. R8: the target
+        # must realpath INSIDE the same subdir (a dotfile target is itself
+        # excluded from candidacy, so only the link gets scored).
+        target = os.path.join(self.spine, "permissions", ".hand-gated-target.md")
         self._write(target, HAND_GATED)
         link = os.path.join(self.spine, "permissions", "2026-08-02-hand-gated-link.md")
         os.symlink(target, link)
@@ -749,12 +749,13 @@ class TestStrictScorerJson(GateHarness):
 
 class TestAnnotateRealpath(GateHarness):
     """R10: annotate() must os.replace at the proposal's real location — a
-    symlinked proposal keeps being a symlink and its target gets the verdict."""
+    symlinked proposal keeps being a symlink and its target gets the verdict.
+    R8 narrowed this: the target must realpath INSIDE the same subdir (escapes
+    are push blockers — see TestPerFileSymlinkContainment). A dotfile target
+    is itself excluded from candidacy, so only the link gets scored."""
 
     def test_symlinked_proposal_annotated_at_target(self):
-        store = os.path.join(self.home, ".claude", "real-store")
-        os.makedirs(store)
-        target = os.path.join(store, "linked-target.md")
+        target = os.path.join(self.spine, "permissions", ".linked-target.md")
         self._write(target, PENDING_PERMISSIONS)
         link = os.path.join(self.spine, "permissions", "2026-08-02-linked.md")
         os.symlink(target, link)
@@ -768,6 +769,141 @@ class TestAnnotateRealpath(GateHarness):
         self.assertTrue(os.path.islink(link),
                         msg="annotation must not replace the symlink itself")
         self.assertIn("gate:", self.read(target))
+
+
+class TestPerFileSymlinkContainment(GateHarness):
+    """R8 item 1: annotate() and the strip-repair path rewrite a candidate's
+    REALPATH, so a per-file symlink escaping its subdir (rsi/x.md -> ~/.zshrc)
+    would get frontmatter PREPENDED to an arbitrary file (no frontmatter is
+    pending-equivalent — fail closed made this worse). Candidacy now requires
+    each file's realpath to stay inside its subdir's OWN realpath; escapes
+    join the push-blocker list (exit 4) and are never read or rewritten. The
+    production rsi SUBDIR symlink keeps working: files inside it realpath
+    into the legacy dir, which IS the subdir's realpath."""
+
+    def test_escape_symlink_blocks_push_and_target_stays_untouched(self):
+        # No frontmatter: before R8 the gate would PREPEND frontmatter here.
+        payload = "# user shell config — must never grow frontmatter\nexport X=1\n"
+        target = os.path.join(self.home, "outside.txt")
+        self._write(target, payload)
+        link = os.path.join(self.spine, "permissions", "2026-08-02-escape.md")
+        os.symlink(target, link)
+
+        listing = self.run_gate("--list")
+        self.assertEqual(listing.returncode, 0,
+                         msg="--list stays informational (exit 0)")
+        out = listing.stdout + listing.stderr
+        self.assertIn("would block push", out)
+        self.assertIn("2026-08-02-escape.md", out)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertIn("2026-08-02-escape.md", out)
+        self.assertIn("escapes", out)
+        self.assertNotIn("2026-08-02-escape", self.claude_calls()[0],
+                         msg="an escaping symlink must never reach the scorer")
+        with open(target, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), payload,
+                             msg="the escape target must stay byte-untouched")
+        self.assertIn("gate:", self.read(self.rsi_pending),
+                      msg="eligible files still get gated in the same run")
+
+    def test_in_subdir_file_symlink_still_gated(self):
+        # a.md -> ./b.md, both in the same subdir: the alias realpaths inside
+        # the subdir's realpath, so it stays a candidate; annotate() writes
+        # through to the target and the symlink survives.
+        target = os.path.join(self.spine, "permissions", "2026-08-02-target.md")
+        self._write(target, PENDING_PERMISSIONS)
+        link = os.path.join(self.spine, "permissions", "2026-08-02-alias.md")
+        os.symlink("./2026-08-02-target.md", link)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-alias.md", "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-target.md", "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertTrue(os.path.islink(link),
+                        msg="an in-subdir symlink must survive annotation")
+        text = self.read(target)
+        self.assertEqual(text.count("gate:"), 1,
+                         msg="alias and target must not double-annotate")
+        self.assertIn("verdict: sharp", text)
+
+    def test_symlinked_subdir_still_fully_gated(self):
+        # The fixture's rsi -> legacy SUBDIR symlink (production shape): its
+        # files realpath into legacy, which IS the subdir realpath — they
+        # must remain candidates, not become escape blockers.
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("gate:", self.read(self.rsi_pending))
+        by_file = {e["file"]: e for e in self.new_gate_log_entries()}
+        self.assertIn("rsi/2026-08-01-cap-fallback.md", by_file)
+
+
+class TestScorerStdoutCap(GateHarness):
+    """R8 item 2: the 5MB stdout cap used to run AFTER capture_output had
+    already buffered the whole pipe in this process. The scorer's stdout now
+    streams to a 0600 tempfile; the cap is an fstat on that file, and an
+    oversized chunk fails (raw file preserved by rename) without a full
+    read into memory."""
+
+    CAP = 5 * 1024 * 1024
+
+    def _raw_files(self):
+        logs = os.path.join(self.home, ".claude", "logs")
+        if not os.path.isdir(logs):
+            return []
+        return sorted(os.path.join(logs, f) for f in os.listdir(logs)
+                      if f.startswith("gate-scorer-raw-"))
+
+    def _stdout_leftovers(self):
+        return [f for f in os.listdir(self.tmpdir)
+                if f.startswith("gate-scorer-stdout-")]
+
+    def test_oversized_scorer_stdout_fails_chunk_and_gates_nothing(self):
+        self._set_stdout("x" * (self.CAP + 4096))
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 3, msg=proc.stdout + proc.stderr)
+        self.assertIn("5MB", proc.stdout + proc.stderr)
+        self.assertNotIn("gate:", self.read(self.rsi_pending))
+        self.assertNotIn("gate:", self.read(self.perm_pending))
+        self.assertEqual(self.new_gate_log_entries(), [])
+        # Raw output preserved for diagnosis — asserted via stat only, never
+        # a full read (the point of the fix is bounded memory).
+        raws = self._raw_files()
+        self.assertEqual(len(raws), 1)
+        self.assertGreater(os.stat(raws[0]).st_size, self.CAP)
+        self.assertEqual(stat.S_IMODE(os.stat(raws[0]).st_mode), 0o600)
+        with open(raws[0], "rb") as fh:
+            self.assertEqual(fh.read(16), b"x" * 16)
+        self.assertEqual(self._stdout_leftovers(), [],
+                         msg="no scorer-stdout tempfiles may accumulate")
+
+    def test_happy_run_leaves_no_stdout_tempfiles(self):
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self._stdout_leftovers(), [])
+
+
+class TestDefaultsMatchShippedConfig(unittest.TestCase):
+    """R8 item 3: gate-config.default.json gained on-decision excluded_files
+    entries in a config-only edit; the code-side DEFAULTS drifted. The two
+    must agree — omitted config keys are documented to fall back to
+    identical built-ins."""
+
+    def test_code_excluded_files_match_default_config_file(self):
+        mod = load_gate_module()
+        ref = os.path.normpath(os.path.join(
+            TESTS_DIR, "..", "references", "gate-config.default.json"))
+        with open(ref, encoding="utf-8") as fh:
+            shipped = json.load(fh)
+        self.assertEqual(mod.DEFAULTS["excluded_files"],
+                         shipped["excluded_files"])
 
 
 class TestPrContextWallCap(unittest.TestCase):
