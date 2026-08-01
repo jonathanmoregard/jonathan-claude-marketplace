@@ -1,0 +1,22 @@
+{
+  "_comment": "Config for the proposal intake gate (scripts/proposal-intake-gate.py) and the on-decision callbacks run by /review-improvements. Installed to <spine_root>/gate-config.json; never overwritten by install.sh once present. Every key is optional — omitted keys fall back to the gate's built-in defaults, which match this file.",
+  "spine_root": "~/.claude/proposals",
+  "subdirs": [],
+  "excluded_subdirs": [".*", "archived"],
+  "excluded_files": ["README*", ".*"],
+  "scorer": {
+    "model": "claude-fable-5",
+    "fallback_model": "opus",
+    "allowed_tools": "Read Grep Glob",
+    "timeout_seconds": 600
+  },
+  "search_paths": ["~/.claude"],
+  "pr_context": {
+    "repo_roots": ["~/Repos"],
+    "extra_repos": {},
+    "merged_limit": 30,
+    "timeout_seconds": 30
+  },
+  "on_decision": {},
+  "gate_log": "~/.claude/proposals/gate-log.jsonl"
+}
