@@ -16,6 +16,15 @@
         "name": "Jonathan Moregard"
       },
       "source": "./plugins/recursive-self-improvement"
+    },
+    {
+      "name": "corrections-loop",
+      "version": "0.1.0",
+      "description": "Deterministic UserPromptSubmit hook that captures correction-shaped user messages into a local JSONL ledger for nightly triage. Regex-only, no LLM in the hot path, never blocks a session.",
+      "author": {
+        "name": "Jonathan Moregard"
+      },
+      "source": "./plugins/corrections-loop"
     }
   ]
 }
