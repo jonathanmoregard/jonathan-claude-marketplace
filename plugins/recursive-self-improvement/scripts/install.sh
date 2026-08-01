@@ -58,7 +58,7 @@ done
 # Gitignore local-only directories
 GITIGNORE="$TARGET/recursive-self-improvement/.gitignore"
 for entry in "observations/" "research/"; do
-  if [[ ! -f "$GITIGNORE" ]] || ! grep -q "$entry" "$GITIGNORE" 2>/dev/null; then
+  if [[ ! -f "$GITIGNORE" ]] || ! grep -qxF "$entry" "$GITIGNORE" 2>/dev/null; then
     echo "$entry" >> "$GITIGNORE"
   fi
 done

@@ -70,6 +70,8 @@ Configuration is saved to `~/.claude/recursive-self-improvement/config/config.js
 - Proposals treated as **untrusted content** in the review skill (defense against prompt injection from logs)
 - **`detect-secrets`** pre-commit hook blocks secrets from being committed anywhere
 
+If the gate repeatedly exits 4 on the *same* file, the scorer never returns a verdict for it — a permanently unscorable proposal. The operator remedy is to rename the file with a leading dot (the gate's default `excluded_files` covers dotfiles) or move it to the `archived/` subdir; either takes it out of every future batch. Do not bypass the gate.
+
 ## Commands
 
 - `/setup-recursive-self-improvement` — configure the plugin (run once, re-run to update)

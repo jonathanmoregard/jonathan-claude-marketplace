@@ -432,26 +432,37 @@ class TestGateBlockReconciliation(GateHarness):
                          msg="a log-reconciled gate block must not be re-scored")
         self.assertNotIn("already-gated", self.claude_calls()[0])
 
-    def test_legacy_bare_basename_log_line_reconciles(self):
-        # Pre-qualified-id gate logs recorded the bare basename in "file".
-        # Those entries must still reconcile, or every previously gated file
-        # gets its block stripped and re-scored daily after an upgrade.
-        legacy_gated = os.path.join(self.legacy, "2026-07-30-legacy-gated.md")
-        self._write(legacy_gated, ALREADY_GATED)
+    def test_bare_basename_log_line_does_not_reconcile(self):
+        # A log entry recording only the bare basename must NOT legitimize a
+        # qualified candidate's gate block: the same basename+date+verdict in
+        # ANOTHER subdir would otherwise cross-reconcile. (No bare-basename
+        # entries exist in production — the gate log had never been written
+        # when qualified ids landed, so there is no upgrade path to honor.)
+        bare_gated = os.path.join(self.legacy, "2026-07-30-bare-gated.md")
+        self._write(bare_gated, ALREADY_GATED)
         with open(os.path.join(self.spine, "gate-log.jsonl"), "a",
                   encoding="utf-8") as fh:
             fh.write(json.dumps({
                 "ts": "2026-07-31T09:05:00", "date": "2026-07-31",
-                "file": "2026-07-30-legacy-gated.md",  # legacy: no subdir
-                "path": legacy_gated, "subdir": "rsi", "verdict": "sharp",
+                "file": "2026-07-30-bare-gated.md",  # bare: no subdir prefix
+                "path": bare_gated, "subdir": "rsi", "verdict": "sharp",
                 "evidence": "no prior art found under ~/.claude or ~/Repos/research-agent",
                 "model": "opus"}, sort_keys=True) + "\n")
-        before = self.read(legacy_gated)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "rsi/2026-07-30-bare-gated.md", "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self._set_stdout(self.canned_verdicts)
+
         proc = self.run_gate()
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
-        self.assertEqual(self.read(legacy_gated), before,
-                         msg="a legacy-logged gate block must not be re-scored")
-        self.assertNotIn("legacy-gated", self.claude_calls()[0])
+        self.assertIn("bare-gated", self.claude_calls()[0],
+                      msg="a bare-basename log line must not reconcile a "
+                          "subdir-qualified candidate")
+        text = self.read(bare_gated)
+        self.assertEqual(text.count("gate:"), 1,
+                         msg="unreconciled block stripped, fresh verdict written")
+        by_file = {e["file"]: e for e in self.new_gate_log_entries()}
+        self.assertEqual(by_file["rsi/2026-07-30-bare-gated.md"]["verdict"], "sharp")
 
     def test_spurious_block_on_symlinked_proposal_repaired_at_target(self):
         # The strip-repair write must share annotate()'s realpath semantics:
