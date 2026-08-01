@@ -82,6 +82,7 @@ DEFAULTS = {
 }
 
 VALID_VERDICTS = ("sharp", "duplicate", "rot")
+VALID_DECISIONS = ("implemented", "rejected", "deferred")
 EVIDENCE_MAX = 200
 REPO_REF_RE = re.compile(r"(?:~|/home/[A-Za-z0-9._-]+)/Repos/([A-Za-z0-9._-]+)")
 # Candidate ids are embedded verbatim in the scorer's instruction text, so
@@ -568,6 +569,51 @@ def append_gate_log(cfg, entry):
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
+def run_callback(cfg, subdir, proposal_path, decision):
+    """Validate and run the on_decision callback configured for `subdir`.
+
+    The config map is the single source of truth, but the executing agent
+    never shells out to an arbitrary configured string: the callback must
+    realpath-resolve under ~/.claude, be a regular file (not itself a
+    symlink), be owned by the current uid, carry no group/other write bits,
+    and be executable. Executed as list argv, shell=False.
+    """
+    if decision not in VALID_DECISIONS:
+        log("error: invalid decision %r (want %s)"
+            % (decision, "|".join(VALID_DECISIONS)))
+        return 1
+    callback = cfg.get("on_decision", {}).get(subdir)
+    if not callback:
+        log("no on_decision callback configured for subdir %r — nothing to run"
+            % subdir)
+        return 0
+    callback = os.path.expanduser(str(callback))
+    claude_root = os.path.expanduser("~/.claude")
+    problems = []
+    if os.path.islink(callback):
+        problems.append("is a symlink")
+    if not os.path.isfile(callback):
+        problems.append("is not a regular file")
+    if not contained(callback, claude_root):
+        problems.append("resolves outside %s" % claude_root)
+    if not problems:
+        st = os.stat(callback)
+        if st.st_uid != os.getuid():
+            problems.append("not owned by the current user")
+        if st.st_mode & 0o022:
+            problems.append("group/other writable")
+        if not os.access(callback, os.X_OK):
+            problems.append("not executable")
+    if problems:
+        log("error: refusing on_decision callback %s for subdir %r: %s"
+            % (callback, subdir, "; ".join(problems)))
+        return 1
+    proposal_path = os.path.realpath(proposal_path)
+    # No shell, no capture: the callback's stdout/stderr surface verbatim.
+    proc = subprocess.run([callback, proposal_path, decision])
+    return proc.returncode
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Annotate pending proposals with independent scorer verdicts.")
     parser.add_argument("--config",
@@ -576,6 +622,11 @@ def main(argv=None):
                         help="gate config JSON (default: %s)" % DEFAULT_CONFIG_PATH)
     parser.add_argument("--list", action="store_true",
                         help="print what would be gated, dispatch nothing")
+    parser.add_argument("--run-callback", nargs=3,
+                        metavar=("SUBDIR", "PROPOSAL_PATH", "DECISION"),
+                        help="validate and run the on_decision callback "
+                             "configured for SUBDIR (decision: %s)"
+                             % "|".join(VALID_DECISIONS))
     args = parser.parse_args(argv)
 
     try:
@@ -583,6 +634,9 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         log("error: cannot load gate config %s: %s" % (args.config, exc))
         return 1
+
+    if args.run_callback:
+        return run_callback(cfg, *args.run_callback)
 
     if not args.list:
         # Single-instance discipline (R9): the gating run strips/annotates

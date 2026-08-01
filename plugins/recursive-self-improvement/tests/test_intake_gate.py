@@ -232,7 +232,7 @@ class GateHarness(unittest.TestCase):
         env["TMPDIR"] = self.tmpdir
         env.pop("PROPOSAL_GATE_CONFIG", None)
         return subprocess.run(
-            [sys.executable, GATE], env=env, cwd=self.tmp,
+            [sys.executable, GATE] + list(args), env=env, cwd=self.tmp,
             capture_output=True, text=True, timeout=120,
         )
 
@@ -700,6 +700,89 @@ class TestSingleInstance(GateHarness):
                          msg="a locked-out instance must dispatch nothing")
         self.assertNotIn("gate:", self.read(self.rsi_pending))
         self.assertEqual(self.new_gate_log_entries(), [])
+
+
+CALLBACK_STUB = """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$STUB_DIR/callback-argv"
+"""
+
+
+class TestRunCallback(GateHarness):
+    """R4: /review-improvements runs on_decision callbacks through
+    `--run-callback`, which validates the configured path (realpath under
+    ~/.claude, regular non-symlink file, owned by us, no group/other write,
+    executable) and execs it with a list argv, shell=False."""
+
+    def _register_callback(self, path):
+        cfg = json.loads(self.read(self.config_path))
+        cfg["on_decision"] = {"permissions": path}
+        self._write(self.config_path, json.dumps(cfg))
+
+    def _install_callback(self, relpath="callbacks/record.sh", mode=0o755):
+        path = os.path.join(self.home, ".claude", relpath)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self._write(path, CALLBACK_STUB)
+        os.chmod(path, mode)
+        self._register_callback(path)
+        return path
+
+    def _callback_argv(self):
+        path = os.path.join(self.stub_dir, "callback-argv")
+        if not os.path.exists(path):
+            return None
+        return self.read(path).splitlines()
+
+    def test_happy_path_receives_exact_argv(self):
+        self._install_callback()
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "implemented")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self._callback_argv(),
+                         [os.path.realpath(self.perm_pending), "implemented"])
+
+    def test_group_writable_callback_rejected(self):
+        self._install_callback(mode=0o775)
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "implemented")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+        self.assertIn("writable", (proc.stdout + proc.stderr).lower())
+
+    def test_callback_outside_claude_dir_rejected(self):
+        outside = os.path.join(self.home, "record.sh")
+        self._write(outside, CALLBACK_STUB)
+        os.chmod(outside, 0o755)
+        self._register_callback(outside)
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "rejected")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+
+    def test_symlink_callback_rejected(self):
+        real = os.path.join(self.home, "real-callback.sh")
+        self._write(real, CALLBACK_STUB)
+        os.chmod(real, 0o755)
+        link = os.path.join(self.home, ".claude", "callbacks", "link.sh")
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(real, link)
+        self._register_callback(link)
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "deferred")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+
+    def test_invalid_decision_rejected(self):
+        self._install_callback()
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "yolo")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+
+    def test_no_callback_configured_is_a_clean_noop(self):
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "implemented")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("no on_decision callback", proc.stdout + proc.stderr)
 
 
 class TestNothingToGate(GateHarness):

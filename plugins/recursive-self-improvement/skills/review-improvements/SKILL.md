@@ -270,13 +270,13 @@ Some proposal sources need to hear about decisions — e.g. a ledger that will r
 { "on_decision": { "<subdir-name>": "/absolute/path/to/callback" } }
 ```
 
-After the user decides on a file-based proposal (implemented / rejected / deferred), look up the proposal's subdir in that map. If a callback is declared, run it via the shell tool **before any archive move** (callbacks read the file in place):
+After the user decides on a file-based proposal (implemented / rejected / deferred), run the gate's callback subcommand **before any archive move** (callbacks read the file in place):
 
 ```
-<callback> <absolute-proposal-path> <decision>
+python3 ~/.claude/scripts/proposal-intake-gate.py --run-callback <subdir> <absolute-proposal-path> <decision>
 ```
 
-where `<decision>` is one of `implemented`, `rejected`, `deferred`. Surface the callback's stdout/stderr to the user verbatim. On nonzero exit: report it and continue the drain — a callback failure never blocks the review, but the user must see it (they may need to run it by hand). Subdirs without an `on_decision` entry have no callback; run nothing. `skip` records no decision, so no callback fires.
+where `<decision>` is one of `implemented`, `rejected`, `deferred`. Never run the configured callback path directly via the shell tool — the subcommand looks the callback up in the map itself and refuses anything that fails validation (must realpath-resolve under `~/.claude`, be a regular non-symlink file owned by you, carry no group/other write bits, and be executable; executed with list argv, `shell=False`). Surface the subcommand's stdout/stderr to the user verbatim. On nonzero exit: report it and continue the drain — a callback failure never blocks the review, but the user must see it (they may need to run it by hand). Subdirs without an `on_decision` entry make the subcommand a clean no-op ("no on_decision callback configured"). `skip` records no decision, so nothing runs.
 
 Do not hardcode subdir names or callback paths in this flow — the map in gate-config.json is the single source of truth. (Example of the pattern: a `permissions` subdir mapping to an adapter that records the decision in the permission ledger so the drained pattern stops being re-proposed nightly.)
 
