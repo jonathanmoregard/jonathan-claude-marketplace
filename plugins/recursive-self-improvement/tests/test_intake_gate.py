@@ -10,6 +10,7 @@ with a fixture proposals spine and puts a stub bin dir first on PATH. The stub
 `claude` logs its argv and emits canned output selected by a mode file; the
 stub `gh` emits canned merged-PR JSON or fails on demand.
 """
+import importlib.util
 import json
 import os
 import re
@@ -22,6 +23,14 @@ import unittest
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.normpath(os.path.join(TESTS_DIR, "..", "scripts", "proposal-intake-gate.py"))
+
+
+def load_gate_module():
+    """Import the gate script as a module for unit-level tests."""
+    spec = importlib.util.spec_from_file_location("proposal_intake_gate", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 PRIMARY_MODEL = "claude-fable-5"
 FALLBACK_MODEL = "opus"
@@ -479,6 +488,66 @@ class TestConfigContainment(GateHarness):
         self.assertFalse(
             os.path.exists(os.path.join(self.stub_dir, "gh-calls.log")),
             msg="gh must not run inside a dir that is not a git checkout")
+
+
+class TestEvidenceHygiene(GateHarness):
+    """R7: scorer evidence is model output — control characters, credential-
+    shaped token runs, and unbounded length must never reach the frontmatter
+    or the gate log."""
+
+    def test_evidence_sanitized_before_frontmatter_and_log(self):
+        dirty = ("grep found\nnothing\x07 odd; leaked ghp_" + "A" * 40 +
+                 " and padding " + "x y " * 80)
+        self.canned_verdicts["verdicts"][0]["evidence"] = dirty
+        self._set_stdout(self.canned_verdicts)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+        rsi = self.read(self.rsi_pending)
+        evidence_line = [l for l in rsi.splitlines() if "evidence:" in l][0]
+        self.assertNotIn("\x07", evidence_line)
+        self.assertNotIn("A" * 40, evidence_line)
+        self.assertIn("[redacted]", evidence_line)
+
+        entry = [e for e in self.new_gate_log_entries()
+                 if e["file"] == "rsi/2026-08-01-cap-fallback.md"][0]
+        self.assertNotIn("\x07", entry["evidence"])
+        self.assertNotIn("A" * 40, entry["evidence"])
+        self.assertIn("[redacted]", entry["evidence"])
+        self.assertNotIn("\n", entry["evidence"])
+        self.assertLessEqual(len(entry["evidence"]), 200)
+
+
+class TestSanitizers(unittest.TestCase):
+    """R7 unit level: the two transformations, called directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_gate_module()
+
+    def test_sanitize_evidence(self):
+        out = self.mod.sanitize_evidence(
+            "a\x00b\r\n   c\td " + "T" * 32 + " tail " + "z" * 300)
+        self.assertNotIn("\x00", out)
+        self.assertNotIn("\n", out)
+        self.assertNotIn("\t", out)
+        self.assertNotIn("   ", out)
+        self.assertNotIn("T" * 32, out)
+        self.assertIn("[redacted]", out)
+        self.assertLessEqual(len(out), 200)
+        # Ordinary citation-shaped evidence passes through untouched.
+        keep = "already shipped: mcp_server/server.py:454-471 (PR #19)"
+        self.assertEqual(self.mod.sanitize_evidence(keep), keep)
+
+    def test_redact_stderr(self):
+        out = self.mod.redact_stderr(
+            "auth failed: Bearer eyJ" + "a" * 40 + " token=xyz KEYCHAIN "
+            "secretive stuff, plain words survive")
+        low = out.lower()
+        for word in ("bearer", "token=xyz", "keychain", "secretive"):
+            self.assertNotIn(word, low)
+        self.assertNotIn("a" * 40, out)
+        self.assertIn("plain words survive", out)
 
 
 class TestNothingToGate(GateHarness):

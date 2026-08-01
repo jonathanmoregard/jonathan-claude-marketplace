@@ -84,6 +84,30 @@ REPO_REF_RE = re.compile(r"(?:~|/home/[A-Za-z0-9._-]+)/Repos/([A-Za-z0-9._-]+)")
 # that could read as instructions to the scorer.
 FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}\.md$")
 SUBDIR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$")
+# Credential-shaped runs (base64/hex/token-ish) never belong in evidence,
+# frontmatter, or logs.
+TOKEN_RUN_RE = re.compile(r"[A-Za-z0-9+/_=-]{32,}")
+# Non-whitespace control characters (whitespace is collapsed separately).
+CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# Words that tend to prefix or carry credentials in tool stderr.
+SECRETY_WORD_RE = re.compile(r"(?i)(?<!\S)(?:key|token|secret|bearer)\S*")
+
+
+def sanitize_evidence(text):
+    """Scorer evidence is model output: collapse whitespace, strip control
+    characters, redact credential-shaped token runs, cap the length."""
+    text = re.sub(r"\s+", " ", text)
+    text = CONTROL_RE.sub("", text)
+    text = TOKEN_RUN_RE.sub("[redacted]", text)
+    return text.strip()[:EVIDENCE_MAX]
+
+
+def redact_stderr(text):
+    """Scorer stderr can echo environment/auth details — drop secret-ish
+    words and token runs before any of it reaches our own log output."""
+    text = TOKEN_RUN_RE.sub("[redacted]", text)
+    text = SECRETY_WORD_RE.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def log(msg):
@@ -445,7 +469,8 @@ def dispatch_scorer(prompt, cfg):
         if proc.returncode == 0:
             return proc.stdout, model
         last_err = "scorer exited %d for %s: %s" % (
-            proc.returncode, model, (proc.stderr or proc.stdout).strip()[:300])
+            proc.returncode, model,
+            redact_stderr((proc.stderr or proc.stdout).strip()[:300]))
         log(last_err)
     log("error: all scorer dispatches failed (%s)" % last_err)
     return None, None
@@ -487,7 +512,7 @@ def parse_verdicts(stdout, candidates):
         if not isinstance(evidence, str):
             log("error: evidence for %s is not a string" % fid)
             return None
-        verdicts[fid] = (verdict, evidence[:EVIDENCE_MAX])
+        verdicts[fid] = (verdict, sanitize_evidence(evidence))
     return verdicts
 
 
