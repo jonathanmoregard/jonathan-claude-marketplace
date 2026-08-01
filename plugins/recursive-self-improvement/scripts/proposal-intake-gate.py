@@ -48,6 +48,13 @@ DEFAULT_CONFIG_PATH = "~/.claude/proposals/gate-config.json"
 # Overall wall cap for pr-context collection: one hung `gh` (or many repos)
 # must not starve the actual gating run.
 PR_CONTEXT_WALL_CAP = 120
+# Whole-run lock. Lives under ~/.claude/logs, NOT in the spine:
+# push-proposals.sh commits the proposals/ subtree wholesale, so a lock file
+# inside it would land in the pushed git history on every run.
+GATE_LOCK_PATH = "~/.claude/logs/gate.lock"
+# How long --run-callback waits for the lock before giving up (the gating run
+# itself never waits: contended means another gate is active, exit 0).
+CALLBACK_LOCK_TIMEOUT_SECONDS = 10.0
 
 DEFAULTS = {
     # Root of the proposals spine; every proposal subdir lives directly under it.
@@ -125,6 +132,26 @@ def contained(path, root):
     rp = os.path.realpath(path)
     rr = os.path.realpath(root)
     return rp == rr or rp.startswith(rr + os.sep)
+
+
+def acquire_gate_lock(timeout=0.0):
+    """Open GATE_LOCK_PATH and take an exclusive flock, retrying non-blocking
+    attempts until `timeout` seconds have passed. Returns the open file object
+    (keep it referenced until process exit) or None when the lock stayed
+    contended. OSError from open/makedirs propagates to the caller."""
+    lock_path = os.path.expanduser(GATE_LOCK_PATH)
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    lock_fh = open(lock_path, "w")
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return lock_fh
+        except OSError:
+            if time.monotonic() >= deadline:
+                lock_fh.close()
+                return None
+            time.sleep(0.2)
 
 
 def require_under_home(path, label):
@@ -587,6 +614,21 @@ def run_callback(cfg, subdir, proposal_path, decision):
         log("no on_decision callback configured for subdir %r — nothing to run"
             % subdir)
         return 0
+    # Same whole-run lock as gating: callbacks may rewrite or move proposal
+    # files, and racing a concurrent gate's check-then-replace would corrupt
+    # them. Bounded blocking (unlike the gating run's single attempt) because
+    # callbacks are human-invoked and a short wait beats a spurious failure.
+    try:
+        lock_fh = acquire_gate_lock(timeout=CALLBACK_LOCK_TIMEOUT_SECONDS)
+    except OSError as exc:
+        log("error: cannot open lock file %s: %s"
+            % (os.path.expanduser(GATE_LOCK_PATH), exc))
+        return 1
+    if lock_fh is None:  # else: held until process exit
+        log("error: could not acquire the gate lock at %s within %ds — "
+            "another gate run is active; retry shortly"
+            % (os.path.expanduser(GATE_LOCK_PATH), CALLBACK_LOCK_TIMEOUT_SECONDS))
+        return 1
     callback = os.path.expanduser(str(callback))
     claude_root = os.path.expanduser("~/.claude")
     problems = []
@@ -642,18 +684,17 @@ def main(argv=None):
         # Single-instance discipline (R9): the gating run strips/annotates
         # frontmatter (check-then-replace) and appends to the gate log —
         # two concurrent runs would interleave both. --list never writes
-        # (repair=False below), so it stays lock-free.
-        lock_path = os.path.join(cfg["spine_root"], ".gate.lock")
+        # (repair=False below), so it stays lock-free. The lock file lives
+        # under ~/.claude/logs (see GATE_LOCK_PATH), never in the spine.
         try:
-            lock_fh = open(lock_path, "w")  # held until process exit
+            lock_fh = acquire_gate_lock()  # held until process exit
         except OSError as exc:
-            log("error: cannot open lock file %s: %s" % (lock_path, exc))
+            log("error: cannot open lock file %s: %s"
+                % (os.path.expanduser(GATE_LOCK_PATH), exc))
             return 1
-        try:
-            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        if lock_fh is None:
             log("proposal-intake-gate: another instance holds the lock at %s "
-                "— exiting without gating" % lock_path)
+                "— exiting without gating" % os.path.expanduser(GATE_LOCK_PATH))
             return 0
 
     candidates, excluded = collect_candidates(cfg, repair=not args.list)

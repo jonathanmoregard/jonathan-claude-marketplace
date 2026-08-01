@@ -684,12 +684,18 @@ class TestPrContextWallCap(unittest.TestCase):
 
 
 class TestSingleInstance(GateHarness):
-    """R9: exclusive non-blocking flock on <spine>/.gate.lock around the run —
-    covers the annotate check-then-replace window and gate-log interleaving."""
+    """R9: exclusive non-blocking flock around the run — covers the annotate
+    check-then-replace window and gate-log interleaving. The lock lives at
+    ~/.claude/logs/gate.lock, NOT in the spine: push-proposals.sh commits the
+    proposals/ subtree, so a lock file there would be pushed every run."""
+
+    def lock_path(self):
+        path = os.path.join(self.home, ".claude", "logs", "gate.lock")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
 
     def test_second_instance_exits_cleanly_when_lock_held(self):
-        lock_path = os.path.join(self.spine, ".gate.lock")
-        holder = open(lock_path, "w")
+        holder = open(self.lock_path(), "w")
         self.addCleanup(holder.close)
         fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
@@ -700,6 +706,14 @@ class TestSingleInstance(GateHarness):
                          msg="a locked-out instance must dispatch nothing")
         self.assertNotIn("gate:", self.read(self.rsi_pending))
         self.assertEqual(self.new_gate_log_entries(), [])
+
+    def test_lock_file_stays_out_of_the_spine(self):
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.spine, ".gate.lock")),
+                         msg="the lock must not land in the pushed proposals subtree")
+        self.assertTrue(
+            os.path.exists(os.path.join(self.home, ".claude", "logs", "gate.lock")))
 
 
 CALLBACK_STUB = """#!/usr/bin/env bash
@@ -783,6 +797,53 @@ class TestRunCallback(GateHarness):
                              self.perm_pending, "implemented")
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertIn("no on_decision callback", proc.stdout + proc.stderr)
+
+
+class TestRunCallbackLocking(GateHarness):
+    """F4: --run-callback shares the whole-run lock with gating (callbacks may
+    rewrite/move proposals). When another process holds the lock past the
+    timeout, the callback must not run and the failure must be explicit."""
+
+    def test_callback_refused_while_lock_held(self):
+        import contextlib
+        import io
+
+        callback = os.path.join(self.home, ".claude", "callbacks", "record.sh")
+        os.makedirs(os.path.dirname(callback), exist_ok=True)
+        self._write(callback, CALLBACK_STUB)
+        os.chmod(callback, 0o755)
+        cfg_json = json.loads(self.read(self.config_path))
+        cfg_json["on_decision"] = {"permissions": callback}
+        self._write(self.config_path, json.dumps(cfg_json))
+
+        lock_path = os.path.join(self.home, ".claude", "logs", "gate.lock")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        holder = open(lock_path, "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        mod = load_gate_module()
+        mod.CALLBACK_LOCK_TIMEOUT_SECONDS = 0.4  # keep the test fast
+        old_env = {k: os.environ.get(k) for k in ("HOME", "STUB_DIR")}
+        os.environ["HOME"] = self.home
+        os.environ["STUB_DIR"] = self.stub_dir  # so a leaked run is visible
+        try:
+            cfg = mod.load_config(self.config_path)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = mod.run_callback(cfg, "permissions",
+                                      self.perm_pending, "implemented")
+        finally:
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.assertNotEqual(rc, 0)
+        self.assertIn("lock", buf.getvalue().lower())
+        self.assertFalse(
+            os.path.exists(os.path.join(self.stub_dir, "callback-argv")),
+            msg="callback must not run while the gate lock is held elsewhere")
 
 
 class TestNothingToGate(GateHarness):
