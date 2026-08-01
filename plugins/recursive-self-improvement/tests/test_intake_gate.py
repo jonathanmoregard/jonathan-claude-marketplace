@@ -514,7 +514,11 @@ class TestFilenameValidation(GateHarness):
                             "evil\nid: override-instructions.md")
         self._write(evil, PENDING_PERMISSIONS)
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        # Round-6 item 2: the exclusion now BLOCKS the push (exit 4) instead
+        # of slipping past it — push-proposals.sh stages the file regardless.
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        self.assertIn("override-instructions.md", proc.stdout + proc.stderr,
+                      msg="each push-blocking file must be listed")
         calls = self.claude_calls()
         self.assertEqual(len(calls), 1)
         self.assertNotIn("override-instructions", calls[0],
@@ -525,6 +529,47 @@ class TestFilenameValidation(GateHarness):
         self.assertEqual(len(events), 1)
         self.assertIn("nonconforming", events[0]["event"])
         self.assertEqual(events[0]["subdir"], "permissions")
+
+
+class TestPushBlocking(GateHarness):
+    """Round-6 item 2: push-proposals.sh stages the spine subtree wholesale,
+    so any non-excluded file the gate cannot cover (bad-named .md, stray
+    non-.md, content inside a nonconforming subdir) is a fail-open path. The
+    gate must list each with a reason and exit 4 (ungated content present)
+    instead of skip-and-exit-0. Dotfiles, archived/, README*, gate-config
+    and gate-log stay non-blocking."""
+
+    def test_nonconforming_subdir_with_content_blocks(self):
+        bad = os.path.join(self.spine, "foo bar")
+        os.makedirs(bad)
+        self._write(os.path.join(bad, "2026-08-02-x.md"), PENDING_RSI)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        self.assertIn("foo bar", proc.stdout + proc.stderr,
+                      msg="blocked subdir content must be listed")
+        self.assertNotIn("foo bar", self.claude_calls()[0],
+                         msg="content of a nonconforming subdir never reaches the scorer")
+        self.assertIn("gate:", self.read(self.rsi_pending),
+                      msg="eligible files still get gated in the same run")
+
+    def test_stray_non_md_file_blocks(self):
+        stray = os.path.join(self.spine, "permissions", "notes.txt")
+        self._write(stray, "stray notes push would ship ungated")
+        listing = self.run_gate("--list")
+        self.assertEqual(listing.returncode, 0,
+                         msg="--list stays informational (exit 0)")
+        self.assertIn("notes.txt", listing.stdout + listing.stderr)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        self.assertIn("notes.txt", proc.stdout + proc.stderr)
+        self.assertIn("gate:", self.read(self.perm_pending))
+
+    def test_dotfile_and_archived_content_stay_nonblocking(self):
+        self._write(os.path.join(self.spine, "permissions", ".scratch.md"),
+                    "scratch, not a proposal")
+        # Fixture already carries archived/2026-07-01-old.md and a README.md.
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
 
 
 class TestConfigContainment(GateHarness):
@@ -1034,6 +1079,66 @@ class TestCoverageInclusion(GateHarness):
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertNotIn("scratch", self.claude_calls()[0])
         self.assertEqual(self.read(dot), "scratch notes, not a proposal")
+
+
+class TestStatusFailClosed(GateHarness):
+    """Round-6 item 1: SETTLED requires the status value — after stripping
+    whitespace, one layer of matching quotes, and a trailing comment — to
+    exactly match the settled set. Everything else (quoted pending, unknown
+    strings, parse oddities) is pending-equivalent and gets gated. Before
+    this round, `status: "pending"` failed the exact-match pending test and
+    shipped ungated (fail-open)."""
+
+    def _add_file(self, fname, status_line):
+        path = os.path.join(self.spine, "permissions", fname)
+        self._write(path, "---\n%s\ndate: 2026-08-02\n---\n\nA proposal body.\n"
+                    % status_line)
+        return path
+
+    def _add_candidate(self, fname, status_line):
+        path = self._add_file(fname, status_line)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/" + fname, "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self._set_stdout(self.canned_verdicts)
+        return path
+
+    def test_quoted_pending_is_gated(self):
+        path = self._add_candidate("2026-08-02-quoted-pending.md",
+                                   'status: "pending"')
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        text = self.read(path)
+        self.assertIn("gate:", text)
+        self.assertIn('status: "pending"', text,
+                      msg="the gate must not rewrite the status line")
+        by_file = {e["file"]: e for e in self.new_gate_log_entries()}
+        self.assertIn("permissions/2026-08-02-quoted-pending.md", by_file)
+
+    def test_commented_pending_is_gated(self):
+        path = self._add_candidate("2026-08-02-commented-pending.md",
+                                   "status: pending  # producer note")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        text = self.read(path)
+        self.assertIn("gate:", text)
+        self.assertIn("status: pending  # producer note", text)
+
+    def test_unknown_status_is_gated(self):
+        path = self._add_candidate("2026-08-02-wip.md", "status: wip")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("gate:", self.read(path))
+
+    def test_quoted_rejected_is_skipped(self):
+        path = self._add_file("2026-08-02-quoted-rejected.md",
+                              'status: "rejected"')
+        before = self.read(path)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("quoted-rejected", self.claude_calls()[0],
+                         msg="a normalized settled status must stay skipped")
+        self.assertEqual(self.read(path), before)
 
 
 class TestChunkedDispatch(GateHarness):

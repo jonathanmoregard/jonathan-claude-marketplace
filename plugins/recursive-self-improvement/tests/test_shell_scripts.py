@@ -108,6 +108,10 @@ class TestPushProposalsGateEnforcement(ShellHarness):
         self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
         self.assertIn("partial batch", proc.stderr)
         self.assertIn("do not bypass", proc.stderr)
+        # Round-6 item 2: exit 4 also covers push-blocking nonconforming
+        # names — the message must mention that cause and the remedy.
+        self.assertIn("nonconforming", proc.stderr)
+        self.assertIn("archived/", proc.stderr)
 
     def test_gate_log_and_old_lock_never_committed(self):
         # F7: gate-log.jsonl is per-host forensics and .gate.lock is the
