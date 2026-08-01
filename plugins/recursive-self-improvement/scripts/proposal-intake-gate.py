@@ -41,8 +41,12 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 DEFAULT_CONFIG_PATH = "~/.claude/proposals/gate-config.json"
+# Overall wall cap for pr-context collection: one hung `gh` (or many repos)
+# must not starve the actual gating run.
+PR_CONTEXT_WALL_CAP = 120
 
 DEFAULTS = {
     # Root of the proposals spine; every proposal subdir lives directly under it.
@@ -384,6 +388,7 @@ def collect_pr_context(repos, cfg):
     the scorer can Read. gh being down must never block gating — each failure
     becomes a 'pr-context unavailable' note instead."""
     pr = cfg["pr_context"]
+    start = time.monotonic()
     fd, path = tempfile.mkstemp(prefix="proposal-gate-pr-context-", suffix=".md")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write("# Recently merged PRs for repos referenced by this batch\n\n")
@@ -391,12 +396,17 @@ def collect_pr_context(repos, cfg):
             fh.write("No repo checkouts referenced by this batch; nothing collected.\n")
         for name, repo_path in sorted(repos.items()):
             fh.write("## %s (%s)\n\n" % (name, repo_path))
+            remaining = PR_CONTEXT_WALL_CAP - (time.monotonic() - start)
+            if remaining <= 0:
+                fh.write("pr-context unavailable: %ds wall cap reached\n\n"
+                         % PR_CONTEXT_WALL_CAP)
+                continue
             try:
                 proc = subprocess.run(
                     ["gh", "pr", "list", "--state", "merged",
                      "--limit", str(pr["merged_limit"]), "--json", "title,mergedAt"],
                     cwd=repo_path, capture_output=True, text=True,
-                    timeout=pr["timeout_seconds"],
+                    timeout=min(pr["timeout_seconds"], remaining),
                 )
                 if proc.returncode == 0:
                     fh.write(proc.stdout.strip() + "\n\n")
@@ -476,20 +486,31 @@ def dispatch_scorer(prompt, cfg):
     return None, None
 
 
+def save_raw_scorer_output(stdout):
+    """Preserve unusable scorer output verbatim for diagnosis — 0600, never
+    echoed into our own stdout (cron logs)."""
+    logs_dir = os.path.expanduser("~/.claude/logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = os.path.join(logs_dir, "gate-scorer-raw-%s.txt" % ts)
+    if os.path.exists(path):  # two failures within one second
+        path = os.path.join(logs_dir, "gate-scorer-raw-%s-%d.txt" % (ts, os.getpid()))
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(stdout)
+    os.chmod(path, 0o600)
+    return path
+
+
 def parse_verdicts(stdout, candidates):
-    """Strict parse of the scorer's JSON. Returns id -> (verdict, evidence) or
-    None when the output is unusable (caller exits nonzero, gates nothing)."""
-    text = stdout.strip()
-    payload = None
-    for attempt in (text, text[text.find("{"):text.rfind("}") + 1]
-                    if "{" in text and "}" in text else ""):
-        if not attempt:
-            continue
-        try:
-            payload = json.loads(attempt)
-            break
-        except json.JSONDecodeError:
-            continue
+    """Strict parse of the scorer's JSON — the contract is JSON on stdout and
+    nothing else; no salvage of JSON embedded in prose. Returns
+    id -> (verdict, evidence) or None when the output is unusable (caller
+    exits nonzero, gates nothing)."""
+    try:
+        payload = json.loads(stdout.strip())
+    except json.JSONDecodeError:
+        payload = None
     if not isinstance(payload, dict) or not isinstance(payload.get("verdicts"), list):
         log("error: scorer output is not the required JSON shape")
         return None
@@ -518,8 +539,9 @@ def parse_verdicts(stdout, candidates):
 
 def annotate(candidate, verdict, evidence, model, today):
     """Insert the gate: block just before the closing --- of the frontmatter.
-    Atomic write; preserves file mode. Returns the block for logging."""
-    path = candidate["path"]
+    Atomic write; preserves file mode. Operates on the proposal's realpath so
+    a symlinked proposal keeps being a symlink and its target gets replaced."""
+    path = os.path.realpath(candidate["path"])
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = fh.read()
     if not is_ungated_pending(text):
@@ -585,14 +607,22 @@ def main(argv=None):
     context_path = collect_pr_context(repos, cfg)
     log("pr-context: %s" % context_path)
 
-    prompt = build_prompt(candidates, repos, context_path, cfg)
-    stdout, model = dispatch_scorer(prompt, cfg)
+    try:
+        prompt = build_prompt(candidates, repos, context_path, cfg)
+        stdout, model = dispatch_scorer(prompt, cfg)
+    finally:
+        # The scorer only needs the context file during dispatch (R6).
+        try:
+            os.unlink(context_path)
+        except OSError:
+            pass
     if stdout is None:
         return 2
 
     verdicts = parse_verdicts(stdout, candidates)
     if verdicts is None:
-        log("head of scorer output was: %r" % stdout.strip()[:300])
+        raw_path = save_raw_scorer_output(stdout)
+        log("scorer output unusable — raw output preserved at %s (0600)" % raw_path)
         log("nothing gated; rerun after fixing the scorer")
         return 3
 

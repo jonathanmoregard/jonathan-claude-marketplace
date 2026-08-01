@@ -38,6 +38,9 @@ FALLBACK_MODEL = "opus"
 CLAUDE_STUB = """#!/usr/bin/env bash
 # Stub claude binary: logs argv, emits canned output per $STUB_DIR/claude-mode.
 printf '%%s\\n<<<END-OF-CALL>>>\\n' "$*" >> "$STUB_DIR/claude-calls.log"
+# The pr-context temp file is deleted by the gate after dispatch (R6);
+# snapshot it at scorer time so tests can still inspect what the scorer saw.
+cp "${TMPDIR:-/tmp}"/proposal-gate-pr-context-*.md "$STUB_DIR/pr-context-copy.md" 2>/dev/null || true
 mode=$(cat "$STUB_DIR/claude-mode" 2>/dev/null || echo happy)
 case "$mode" in
   happy)
@@ -168,6 +171,9 @@ class GateHarness(unittest.TestCase):
         self.stub_dir = os.path.join(self.tmp, "stub")
         self.bin_dir = os.path.join(self.stub_dir, "bin")
         os.makedirs(self.bin_dir)
+        # Isolated TMPDIR so temp-file hygiene is observable per test.
+        self.tmpdir = os.path.join(self.tmp, "tmp")
+        os.makedirs(self.tmpdir)
         self._write_exec(os.path.join(self.bin_dir, "claude"), CLAUDE_STUB)
         self._write_exec(os.path.join(self.bin_dir, "gh"), GH_STUB)
 
@@ -222,6 +228,7 @@ class GateHarness(unittest.TestCase):
         env["HOME"] = self.home
         env["PATH"] = self.bin_dir + os.pathsep + env.get("PATH", "")
         env["STUB_DIR"] = self.stub_dir
+        env["TMPDIR"] = self.tmpdir
         env.pop("PROPOSAL_GATE_CONFIG", None)
         return subprocess.run(
             [sys.executable, GATE], env=env, cwd=self.tmp,
@@ -317,9 +324,9 @@ class TestHappyPath(GateHarness):
     def test_pr_context_contains_merged_titles(self):
         proc = self.run_gate()
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
-        m = re.search(r"(?m)^pr-context: (.+)$", proc.stdout)
-        self.assertIsNotNone(m, msg="gate must print the pr-context file path\n" + proc.stdout)
-        ctx = self.read(m.group(1).strip())
+        # The temp file is deleted after dispatch — inspect the snapshot the
+        # stub scorer took at call time.
+        ctx = self.read(os.path.join(self.stub_dir, "pr-context-copy.md"))
         self.assertIn("fall back to opus when fable hits the usage cap", ctx)
         self.assertIn("research-agent", ctx)
 
@@ -374,9 +381,8 @@ class TestGhOutage(GateHarness):
         proc = self.run_gate()
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertIn("gate:", self.read(self.rsi_pending))
-        m = re.search(r"(?m)^pr-context: (.+)$", proc.stdout)
-        self.assertIsNotNone(m)
-        self.assertIn("pr-context unavailable", self.read(m.group(1).strip()))
+        ctx = self.read(os.path.join(self.stub_dir, "pr-context-copy.md"))
+        self.assertIn("pr-context unavailable", ctx)
 
 
 class TestGateBlockReconciliation(GateHarness):
@@ -548,6 +554,132 @@ class TestSanitizers(unittest.TestCase):
             self.assertNotIn(word, low)
         self.assertNotIn("a" * 40, out)
         self.assertIn("plain words survive", out)
+
+
+class TestPrContextCleanup(GateHarness):
+    """R6: the pr-context temp file must not accumulate in $TMPDIR."""
+
+    def _leftovers(self):
+        return [f for f in os.listdir(self.tmpdir)
+                if f.startswith("proposal-gate-pr-context-")]
+
+    def test_temp_context_removed_after_happy_run(self):
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self._leftovers(), [])
+
+    def test_temp_context_removed_after_scorer_failure(self):
+        self._set_mode("fail-all")
+        proc = self.run_gate()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(self._leftovers(), [])
+
+
+class TestStrictScorerJson(GateHarness):
+    """R10: no brace-scan salvage — the scorer contract is strict JSON on
+    stdout and nothing else. Unparseable output is preserved verbatim in a
+    0600 file for diagnosis instead of being echoed into cron logs."""
+
+    def _raw_files(self):
+        logs = os.path.join(self.home, ".claude", "logs")
+        if not os.path.isdir(logs):
+            return []
+        return sorted(os.path.join(logs, f) for f in os.listdir(logs)
+                      if f.startswith("gate-scorer-raw-"))
+
+    def test_prose_wrapped_json_is_rejected(self):
+        self._set_stdout("Sure! Here are the verdicts:\n"
+                         + json.dumps(self.canned_verdicts)
+                         + "\nHope that helps!")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 3, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("gate:", self.read(self.rsi_pending))
+        self.assertEqual(self.new_gate_log_entries(), [])
+
+    def test_unparseable_output_saved_raw_0600_and_cited(self):
+        self._set_mode("malformed")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 3, msg=proc.stdout + proc.stderr)
+        raws = self._raw_files()
+        self.assertEqual(len(raws), 1)
+        self.assertIn(raws[0], proc.stdout + proc.stderr,
+                      msg="exit 3 must cite the raw-output path")
+        self.assertEqual(stat.S_IMODE(os.stat(raws[0]).st_mode), 0o600)
+        self.assertIn("none of this is JSON", self.read(raws[0]))
+        # The raw output itself must NOT be echoed into our own stdout/logs.
+        self.assertNotIn("none of this is JSON", proc.stdout + proc.stderr)
+
+
+class TestAnnotateRealpath(GateHarness):
+    """R10: annotate() must os.replace at the proposal's real location — a
+    symlinked proposal keeps being a symlink and its target gets the verdict."""
+
+    def test_symlinked_proposal_annotated_at_target(self):
+        store = os.path.join(self.home, ".claude", "real-store")
+        os.makedirs(store)
+        target = os.path.join(store, "linked-target.md")
+        self._write(target, PENDING_PERMISSIONS)
+        link = os.path.join(self.spine, "permissions", "2026-08-02-linked.md")
+        os.symlink(target, link)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-linked.md", "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertTrue(os.path.islink(link),
+                        msg="annotation must not replace the symlink itself")
+        self.assertIn("gate:", self.read(target))
+
+
+class TestPrContextWallCap(unittest.TestCase):
+    """R10: pr-context collection has a 120s overall wall cap — one slow repo
+    cannot starve the rest of the run."""
+
+    def test_wall_cap_skips_remaining_repos(self):
+        mod = load_gate_module()
+        self.assertEqual(mod.PR_CONTEXT_WALL_CAP, 120)
+        tmp = tempfile.mkdtemp(prefix="wall-cap-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        bin_dir = os.path.join(tmp, "bin")
+        os.makedirs(bin_dir)
+        gh = os.path.join(bin_dir, "gh")
+        with open(gh, "w", encoding="utf-8") as fh:
+            fh.write("#!/usr/bin/env bash\necho called >> '%s/gh.log'\necho '[]'\n"
+                     % tmp)
+        os.chmod(gh, 0o755)
+        repo_a = os.path.join(tmp, "repo-a")
+        repo_b = os.path.join(tmp, "repo-b")
+        os.makedirs(repo_a)
+        os.makedirs(repo_b)
+
+        class FakeTime:
+            # start, check before repo-a (inside cap), check before repo-b
+            # (past the cap), then whatever.
+            vals = [0.0, 10.0, 500.0]
+
+            def monotonic(self):
+                return self.vals.pop(0) if self.vals else 1000.0
+
+        mod.time = FakeTime()
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = bin_dir + os.pathsep + old_path
+        try:
+            cfg = {"pr_context": {"merged_limit": 5, "timeout_seconds": 30,
+                                  "repo_roots": [], "extra_repos": {}}}
+            path = mod.collect_pr_context({"a": repo_a, "b": repo_b}, cfg)
+        finally:
+            os.environ["PATH"] = old_path
+        try:
+            with open(path, encoding="utf-8") as fh:
+                ctx = fh.read()
+        finally:
+            os.unlink(path)
+        self.assertIn("wall cap", ctx)
+        with open(os.path.join(tmp, "gh.log"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read().count("called"), 1,
+                             msg="only the first repo fits inside the cap")
 
 
 class TestNothingToGate(GateHarness):
