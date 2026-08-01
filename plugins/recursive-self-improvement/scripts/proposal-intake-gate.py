@@ -247,10 +247,12 @@ def parse_gate_block(lines, start, end):
 
 
 def load_gate_log_index(cfg):
-    """{(qualified_file_id, date, verdict)} for every line this script has
-    written to the gate log. A gate: block in a proposal only counts as real
-    if it reconciles against one of these — producers write frontmatter
-    wholesale, so an unreconciled block is spurious and gets re-scored."""
+    """{(file_id, date, verdict)} for every line this script has written to
+    the gate log. A gate: block in a proposal only counts as real if it
+    reconciles against one of these — producers write frontmatter wholesale,
+    so an unreconciled block is spurious and gets re-scored. Current entries
+    carry subdir-qualified ids; legacy (pre-qualified) entries recorded the
+    bare basename and are matched against candidates' basenames."""
     index = set()
     try:
         with open(cfg["gate_log"], encoding="utf-8") as fh:
@@ -369,11 +371,18 @@ def collect_candidates(cfg, repair=True):
                 verdict, bdate = parse_gate_block(lines, block[0], block[1])
                 if (qid, bdate, verdict) in log_index:
                     continue  # genuinely gated by a prior run of this script
+                if (fname, bdate, verdict) in log_index:
+                    # Legacy gate-log lines (pre-qualified ids) recorded the
+                    # bare basename — still honor them, or an upgrade would
+                    # strip and re-score every previously gated proposal.
+                    continue
                 log("warning: %s carries a gate block with no matching "
                     "gate-log line — stripping it and re-scoring" % qid)
                 content = "".join(lines[:block[0]] + lines[block[1]:])
                 if repair:
-                    atomic_write(fpath, content)
+                    # Same realpath semantics as annotate(): a symlinked
+                    # proposal stays a symlink; its target gets rewritten.
+                    atomic_write(os.path.realpath(fpath), content)
             candidates.append({
                 "id": qid,
                 "path": os.path.abspath(fpath),
@@ -561,6 +570,11 @@ def parse_verdicts(stdout, candidates):
             return None
         if not isinstance(evidence, str):
             log("error: evidence for %s is not a string" % fid)
+            return None
+        if fid in verdicts:
+            # No silent last-write-wins: conflicting entries mean the scorer
+            # did not follow the contract — reject the whole batch.
+            log("error: duplicate verdict for file id %r — batch rejected" % fid)
             return None
         verdicts[fid] = (verdict, sanitize_evidence(evidence))
     return verdicts

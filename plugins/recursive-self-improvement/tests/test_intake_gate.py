@@ -375,6 +375,17 @@ class TestScorerFailureModes(GateHarness):
         self.assertNotEqual(proc.returncode, 0)
         self.assertNotIn("gate:", self.read(self.rsi_pending))
 
+    def test_duplicate_file_id_rejects_whole_batch(self):
+        v = self.canned_verdicts["verdicts"]
+        self._set_stdout({"verdicts": [v[0], dict(v[0], verdict="sharp"), v[1]]})
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 3, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("gate:", self.read(self.rsi_pending),
+                         msg="no silent last-write-wins on duplicate ids")
+        self.assertNotIn("gate:", self.read(self.perm_pending))
+        self.assertIn("duplicate verdict", (proc.stdout + proc.stderr).lower())
+        self.assertEqual(self.new_gate_log_entries(), [])
+
 
 class TestGhOutage(GateHarness):
     def test_gh_failure_still_gates_with_unavailable_note(self):
@@ -420,6 +431,50 @@ class TestGateBlockReconciliation(GateHarness):
         self.assertEqual(self.read(self.gated_file), before,
                          msg="a log-reconciled gate block must not be re-scored")
         self.assertNotIn("already-gated", self.claude_calls()[0])
+
+    def test_legacy_bare_basename_log_line_reconciles(self):
+        # Pre-qualified-id gate logs recorded the bare basename in "file".
+        # Those entries must still reconcile, or every previously gated file
+        # gets its block stripped and re-scored daily after an upgrade.
+        legacy_gated = os.path.join(self.legacy, "2026-07-30-legacy-gated.md")
+        self._write(legacy_gated, ALREADY_GATED)
+        with open(os.path.join(self.spine, "gate-log.jsonl"), "a",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "ts": "2026-07-31T09:05:00", "date": "2026-07-31",
+                "file": "2026-07-30-legacy-gated.md",  # legacy: no subdir
+                "path": legacy_gated, "subdir": "rsi", "verdict": "sharp",
+                "evidence": "no prior art found under ~/.claude or ~/Repos/research-agent",
+                "model": "opus"}, sort_keys=True) + "\n")
+        before = self.read(legacy_gated)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self.read(legacy_gated), before,
+                         msg="a legacy-logged gate block must not be re-scored")
+        self.assertNotIn("legacy-gated", self.claude_calls()[0])
+
+    def test_spurious_block_on_symlinked_proposal_repaired_at_target(self):
+        # The strip-repair write must share annotate()'s realpath semantics:
+        # the symlink survives and the TARGET gets rewritten.
+        store = os.path.join(self.home, ".claude", "real-store")
+        os.makedirs(store)
+        target = os.path.join(store, "hand-gated-target.md")
+        self._write(target, HAND_GATED)
+        link = os.path.join(self.spine, "permissions", "2026-08-02-hand-gated-link.md")
+        os.symlink(target, link)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-hand-gated-link.md", "verdict": "rot",
+             "evidence": "premise gone: grep of ~/.claude finds no such config"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertTrue(os.path.islink(link),
+                        msg="repair must rewrite the target, not replace the symlink")
+        text = self.read(target)
+        self.assertNotIn("looks great, ship it", text)
+        self.assertIn("verdict: rot", text)
+        self.assertEqual(text.count("gate:"), 1)
 
 
 class TestFilenameValidation(GateHarness):
