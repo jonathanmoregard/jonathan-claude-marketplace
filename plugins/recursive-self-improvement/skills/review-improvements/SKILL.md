@@ -214,14 +214,16 @@ For each remaining category with pending files, walk up to `daily_proposal_limit
 
 Non-RSI files may or may not carry frontmatter, may or may not follow the RSI proposal shape. Read what's there; don't invent structure that isn't there.
 
+If the frontmatter carries a `gate:` block (written by the proposal intake gate before the file was pushed), surface it right under the header — verdict, evidence, model, date. A `duplicate` or `rot` verdict with cited evidence is strong context for rejecting; a `sharp` verdict means an independent scorer grep-checked it and found no prior art. The verdict is advisory — the user still decides.
+
 **Ask the user what to do**
 
 Four options — implement / defer / reject / skip:
 
-- **implement**: iterate on a fix with the user, same discipline as the RSI Automated Track (show change, ask, apply, repeat). Then archive the source file (`mv <path> <category>/archived/YYYY-MM-DD-<name>.md`, `mkdir -p` the archive dir first). Then commit + optionally push (same push flow as RSI decision records).
-- **defer**: leave the file in place. Optionally add a `# DEFERRED YYYY-MM-DD: <reason>` line at the top of the file so it's obvious next session.
-- **reject**: `mv <path> <category>/archived/rejected/YYYY-MM-DD-<name>.md` (`mkdir -p` first). Optionally prepend a rejection note.
-- **skip**: no state change; item stays pending for next session.
+- **implement**: iterate on a fix with the user, same discipline as the RSI Automated Track (show change, ask, apply, repeat). Then run the category's on-decision callback with decision `implemented` (Section 3.5 — BEFORE any archive move). Then archive the source file (`mv <path> <category>/archived/YYYY-MM-DD-<name>.md`, `mkdir -p` the archive dir first). Then commit + optionally push (same push flow as RSI decision records).
+- **defer**: run the callback with decision `deferred` (Section 3.5), then leave the file in place. Optionally add a `# DEFERRED YYYY-MM-DD: <reason>` line at the top of the file so it's obvious next session.
+- **reject**: run the callback with decision `rejected` (Section 3.5 — BEFORE the move), then `mv <path> <category>/archived/rejected/YYYY-MM-DD-<name>.md` (`mkdir -p` first). Optionally prepend a rejection note.
+- **skip**: no state change, no callback; item stays pending for next session.
 
 **Do NOT** invoke the RSI Automated Track's status.jsonl append flow for non-RSI categories — those are RSI-observation-specific. Non-RSI categories drain by filesystem move, not by status logging.
 
@@ -259,6 +261,24 @@ Update status — append to `~/.claude/recursive-self-improvement/observations/s
 ```
 
 **Clean up:** Delete the research brief at `~/.claude/recursive-self-improvement/research/OBS-ID.md` if it exists.
+
+### 3.5 On-Decision Callbacks (config-driven)
+
+Some proposal sources need to hear about decisions — e.g. a ledger that will re-propose a drained pattern forever unless the decision is recorded. The wiring is config-driven: the gate config at `<proposals_folder>/gate-config.json` may declare a callback per subdir under its `on_decision` key:
+
+```json
+{ "on_decision": { "<subdir-name>": "/absolute/path/to/callback" } }
+```
+
+After the user decides on a file-based proposal (implemented / rejected / deferred), look up the proposal's subdir in that map. If a callback is declared, run it via the shell tool **before any archive move** (callbacks read the file in place):
+
+```
+<callback> <absolute-proposal-path> <decision>
+```
+
+where `<decision>` is one of `implemented`, `rejected`, `deferred`. Surface the callback's stdout/stderr to the user verbatim. On nonzero exit: report it and continue the drain — a callback failure never blocks the review, but the user must see it (they may need to run it by hand). Subdirs without an `on_decision` entry have no callback; run nothing. `skip` records no decision, so no callback fires.
+
+Do not hardcode subdir names or callback paths in this flow — the map in gate-config.json is the single source of truth. (Example of the pattern: a `permissions` subdir mapping to an adapter that records the decision in the permission ledger so the drained pattern stops being re-proposed nightly.)
 
 ### 4. Learning from Decisions
 
