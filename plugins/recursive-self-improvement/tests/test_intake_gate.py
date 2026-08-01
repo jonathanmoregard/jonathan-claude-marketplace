@@ -1199,6 +1199,76 @@ class TestChunkedDispatch(GateHarness):
                          msg="a rejected config must dispatch nothing")
 
 
+class TestByteFidelity(GateHarness):
+    """Round-7 item 2: proposals are read as raw bytes + strict UTF-8 with
+    newline='' semantics. A CRLF file round-trips byte-identically outside
+    the inserted gate block (the block itself always uses \\n — documented
+    contract); a non-UTF8 file is never rewritten — it joins the push-blocker
+    list (exit 4) with reason 'not valid UTF-8'."""
+
+    CRLF_BODY = (b"---\r\nstatus: pending\r\ndate: 2026-08-01\r\n---\r\n"
+                 b"\r\n## Problem\r\n\r\nCRLF proposal body.\r\n")
+
+    def test_crlf_proposal_round_trips_outside_gate_block(self):
+        path = os.path.join(self.spine, "permissions", "2026-08-02-crlf.md")
+        with open(path, "wb") as fh:
+            fh.write(self.CRLF_BODY)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-crlf.md", "verdict": "sharp",
+             "evidence": "no prior art under ~/.claude"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        head = b"---\r\nstatus: pending\r\ndate: 2026-08-01\r\n"
+        tail = b"---\r\n\r\n## Problem\r\n\r\nCRLF proposal body.\r\n"
+        self.assertEqual(head + tail, self.CRLF_BODY)  # slicing sanity
+        self.assertTrue(raw.startswith(head),
+                        msg="frontmatter bytes before the block must be intact: %r" % raw)
+        self.assertTrue(raw.endswith(tail),
+                        msg="closing --- and body bytes must be intact: %r" % raw)
+        block = raw[len(head):len(raw) - len(tail)]
+        self.assertTrue(block.startswith(b"gate:\n"))
+        self.assertNotIn(b"\r", block, msg="the gate block itself uses \\n")
+        self.assertEqual(raw.replace(block, b""), self.CRLF_BODY,
+                         msg="removing the block must restore the original bytes")
+
+        # The \n-ended block inside a CRLF file must reconcile on rerun:
+        # no re-dispatch, no byte rewrite.
+        calls_after_first = len(self.claude_calls())
+        second = self.run_gate()
+        self.assertEqual(second.returncode, 0, msg=second.stdout + second.stderr)
+        self.assertEqual(len(self.claude_calls()), calls_after_first)
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), raw)
+
+    def test_non_utf8_file_blocks_push_and_stays_untouched(self):
+        bad = os.path.join(self.spine, "permissions", "2026-08-02-latin1.md")
+        raw = b"---\nstatus: pending\n---\n\nR\xe9sum\xe9 in latin-1, not UTF-8.\n"
+        with open(bad, "wb") as fh:
+            fh.write(raw)
+
+        listing = self.run_gate("--list")
+        self.assertEqual(listing.returncode, 0,
+                         msg="--list stays informational (exit 0)")
+        self.assertIn("not valid UTF-8", listing.stdout + listing.stderr)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertIn("2026-08-02-latin1.md", out)
+        self.assertIn("not valid UTF-8", out)
+        self.assertNotIn("latin1", self.claude_calls()[0],
+                         msg="an undecodable file must never reach the scorer")
+        with open(bad, "rb") as fh:
+            self.assertEqual(fh.read(), raw,
+                             msg="the gate must never rewrite undecodable bytes")
+        self.assertIn("gate:", self.read(self.rsi_pending),
+                      msg="eligible files still get gated in the same run")
+
+
 class TestNothingToGate(GateHarness):
     def test_no_pending_files_no_dispatch(self):
         os.remove(self.rsi_pending)

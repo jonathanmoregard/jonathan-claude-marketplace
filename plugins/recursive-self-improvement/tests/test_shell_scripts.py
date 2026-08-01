@@ -67,6 +67,10 @@ class ShellHarness(unittest.TestCase):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("seed\n")
+        # Production layout: proposals/rsi is a symlink to the legacy dir
+        # (install.sh: ln -sfn). push-proposals.sh asserts this before gating.
+        os.symlink(os.path.join(self.claude, "recursive-self-improvement", "proposals"),
+                   os.path.join(self.claude, "proposals", "rsi"))
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "seed")
 
@@ -149,6 +153,70 @@ class TestPushProposalsGateEnforcement(ShellHarness):
         self.assertNotIn("gate-log.jsonl", committed,
                          msg="the gate log is local forensics — never pushed")
         self.assertNotIn(".gate.lock", committed)
+
+
+class TestPushSymlinkGuard(ShellHarness):
+    """Round-7 item 1: the gate's conformance scan reaches the legacy rsi
+    content ONLY through the proposals/rsi symlink, while push-proposals.sh
+    stages recursive-self-improvement/proposals/ directly. Install drift
+    (symlink missing, replaced by a real dir, or retargeted) means the push
+    would ship legacy content the gate never scanned — the push must abort
+    BEFORE the gate runs, with the install.sh remedy."""
+
+    def _install_marker_gate(self):
+        """A gate stub that records having run — proves guard-before-gate."""
+        gate = os.path.join(self.claude, "scripts", "proposal-intake-gate.py")
+        os.makedirs(os.path.dirname(gate), exist_ok=True)
+        with open(gate, "w", encoding="utf-8") as fh:
+            fh.write("import os, sys\n"
+                     "open(os.path.join(os.path.expanduser('~'), 'gate-ran'),"
+                     " 'w').close()\n"
+                     "sys.exit(0)\n")
+
+    def _assert_aborted_before_gate(self, proc):
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("rsi symlink", proc.stderr)
+        self.assertIn("re-run install.sh", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "gate-ran")),
+                         msg="the symlink guard must fire before the gate runs")
+        self.assertNotIn("No proposal changes", proc.stdout,
+                         msg="git flow must not be reached")
+
+    def test_rsi_replaced_by_real_dir_aborts(self):
+        self.init_claude_repo()
+        self._install_marker_gate()
+        link = os.path.join(self.claude, "proposals", "rsi")
+        os.remove(link)
+        os.makedirs(link)
+        with open(os.path.join(link, "2026-08-02-drift.md"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("---\nstatus: pending\n---\ndrifted content\n")
+        self._assert_aborted_before_gate(self.run_script(PUSH))
+
+    def test_rsi_symlink_missing_aborts(self):
+        self.init_claude_repo()
+        self._install_marker_gate()
+        os.remove(os.path.join(self.claude, "proposals", "rsi"))
+        self._assert_aborted_before_gate(self.run_script(PUSH))
+
+    def test_rsi_symlink_wrong_target_aborts(self):
+        self.init_claude_repo()
+        self._install_marker_gate()
+        elsewhere = os.path.join(self.claude, "somewhere-else")
+        os.makedirs(elsewhere)
+        link = os.path.join(self.claude, "proposals", "rsi")
+        os.remove(link)
+        os.symlink(elsewhere, link)
+        self._assert_aborted_before_gate(self.run_script(PUSH))
+
+    def test_healthy_symlink_proceeds_to_gate(self):
+        self.init_claude_repo()
+        self._install_marker_gate()
+        proc = self.run_script(PUSH)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.home, "gate-ran")),
+                        msg="a healthy symlink must let the gate run")
+        self.assertIn("No proposal changes", proc.stdout)
 
 
 class TestInstallScript(ShellHarness):
