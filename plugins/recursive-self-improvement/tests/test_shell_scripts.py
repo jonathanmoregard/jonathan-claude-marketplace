@@ -109,6 +109,43 @@ class TestPushProposalsGateEnforcement(ShellHarness):
         self.assertIn("partial batch", proc.stderr)
         self.assertIn("do not bypass", proc.stderr)
 
+    def test_gate_log_and_old_lock_never_committed(self):
+        # F7: gate-log.jsonl is per-host forensics and .gate.lock is the
+        # retired lock location — neither belongs in the pushed history.
+        self.init_claude_repo()
+        bare = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True,
+                       capture_output=True, env=self.env())
+        self.git("remote", "add", "origin", bare)
+        self.git("push", "-q", "-u", "origin", "HEAD")
+        gate = os.path.join(self.claude, "scripts", "proposal-intake-gate.py")
+        os.makedirs(os.path.dirname(gate), exist_ok=True)
+        with open(gate, "w", encoding="utf-8") as fh:
+            fh.write("import sys\nsys.exit(0)\n")
+
+        prop = os.path.join(self.claude, "proposals", "permissions",
+                            "2026-08-02-new.md")
+        os.makedirs(os.path.dirname(prop), exist_ok=True)
+        with open(prop, "w", encoding="utf-8") as fh:
+            fh.write("---\nstatus: pending\n---\nbody\n")
+        cfgpath = os.path.join(self.claude, "proposals", "gate-config.json")
+        with open(cfgpath, "w", encoding="utf-8") as fh:
+            fh.write("{}\n")
+        for runtime in ("gate-log.jsonl", ".gate.lock"):
+            with open(os.path.join(self.claude, "proposals", runtime),
+                      "w", encoding="utf-8") as fh:
+                fh.write("local runtime state\n")
+
+        proc = self.run_script(PUSH)
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        committed = self.git("log", "-1", "--name-only", "--format=")
+        self.assertIn("proposals/permissions/2026-08-02-new.md", committed)
+        self.assertIn("proposals/gate-config.json", committed,
+                      msg="gate-config is user config and stays versioned")
+        self.assertNotIn("gate-log.jsonl", committed,
+                         msg="the gate log is local forensics — never pushed")
+        self.assertNotIn(".gate.lock", committed)
+
 
 class TestInstallScript(ShellHarness):
     """R8: validate cron numbers before composing cron lines; stage and
@@ -152,6 +189,29 @@ class TestInstallScript(ShellHarness):
         with open(os.path.join(self.tmp, "cron-state"), encoding="utf-8") as fh:
             cron = fh.read()
         self.assertIn("0 17 * * *", cron)
+
+    def test_spine_gitignore_written_and_idempotent(self):
+        # F7: install.sh manages proposals/.gitignore so the gate log and the
+        # retired lock name stay out of the pushed proposals subtree.
+        self.init_claude_repo()
+        proc = self.run_script(INSTALL, PLUGIN_ROOT, "17", "0")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        gi = os.path.join(self.claude, "proposals", ".gitignore")
+        with open(gi, encoding="utf-8") as fh:
+            content = fh.read()
+        self.assertIn("gate-log.jsonl", content)
+        self.assertIn(".gate.lock", content)
+        committed = self.git("log", "-1", "--name-only", "--format=")
+        self.assertIn("proposals/.gitignore", committed,
+                      msg="the spine gitignore must ship with the install commit")
+
+        proc2 = self.run_script(INSTALL, PLUGIN_ROOT, "17", "0")
+        self.assertEqual(proc2.returncode, 0, msg=proc2.stdout + proc2.stderr)
+        with open(gi, encoding="utf-8") as fh:
+            content2 = fh.read()
+        self.assertEqual(content2.count("gate-log.jsonl"), 1,
+                         msg="re-running install must not duplicate entries")
+        self.assertEqual(content2.count(".gate.lock"), 1)
 
 
 if __name__ == "__main__":

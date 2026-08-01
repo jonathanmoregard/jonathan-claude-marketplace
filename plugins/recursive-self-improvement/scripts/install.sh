@@ -63,6 +63,17 @@ for entry in "observations/" "research/"; do
   fi
 done
 
+# Keep gate runtime state out of the pushed proposals subtree: gate-log.jsonl
+# is per-host forensics, and .gate.lock is the retired pre-2026-08 lock
+# location (the lock now lives at ~/.claude/logs/gate.lock). push-proposals.sh
+# also excludes both via pathspec — this gitignore is the second belt.
+SPINE_GITIGNORE="$TARGET/proposals/.gitignore"
+for entry in "gate-log.jsonl" ".gate.lock"; do
+  if [[ ! -f "$SPINE_GITIGNORE" ]] || ! grep -qxF "$entry" "$SPINE_GITIGNORE" 2>/dev/null; then
+    echo "$entry" >> "$SPINE_GITIGNORE"
+  fi
+done
+
 echo "Copying reference files..."
 cp "$PLUGIN_ROOT/references/policy.md" "$TARGET/recursive-self-improvement/config/policy.md"
 cp "$PLUGIN_ROOT/references/categories.md" "$TARGET/recursive-self-improvement/config/categories.md"
@@ -134,6 +145,7 @@ echo "Committing configuration..."
 # pre-staged work is neither swept into this commit nor unstaged.
 INSTALLED_PATHS=(
   recursive-self-improvement/.gitignore
+  proposals/.gitignore
   recursive-self-improvement/config/policy.md
   recursive-self-improvement/config/categories.md
   recursive-self-improvement/config/prompt.md
