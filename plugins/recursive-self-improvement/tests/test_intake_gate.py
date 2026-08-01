@@ -533,6 +533,15 @@ class TestConfigContainment(GateHarness):
         self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
         self.assertEqual(self.claude_calls(), [])
 
+    def test_extra_repo_outside_home_rejected_at_load(self):
+        # extra_repos values feed gh's cwd and the scorer's grep roots —
+        # same containment invariant as search_paths.
+        self._rewrite_config(pr_context={"extra_repos": {"evil": "/etc"}})
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("outside", (proc.stdout + proc.stderr).lower())
+        self.assertEqual(self.claude_calls(), [])
+
     def test_subdir_symlink_escaping_home_is_skipped(self):
         outside = os.path.join(self.tmp, "outside-subdir")
         os.makedirs(outside)
@@ -846,6 +855,32 @@ class TestRunCallback(GateHarness):
                              self.perm_pending, "yolo")
         self.assertNotEqual(proc.returncode, 0)
         self.assertIsNone(self._callback_argv(), msg="callback must not run")
+
+    def test_proposal_path_outside_spine_rejected(self):
+        # F9: the callback only ever gets a proposal that realpath-resolves
+        # inside the subdir it was registered for.
+        self._install_callback()
+        stray = os.path.join(self.home, "stray-proposal.md")
+        self._write(stray, PENDING_PERMISSIONS)
+        proc = self.run_gate("--run-callback", "permissions",
+                             stray, "implemented")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+        self.assertIn("resolve", (proc.stdout + proc.stderr).lower())
+
+    def test_symlinked_subdir_proposal_accepted(self):
+        # rsi is a symlink whose target realpaths OUTSIDE spine_root's
+        # realpath — containment must follow the subdir symlink, or every
+        # production rsi callback breaks.
+        path = self._install_callback()
+        cfg = json.loads(self.read(self.config_path))
+        cfg["on_decision"] = {"rsi": path}
+        self._write(self.config_path, json.dumps(cfg))
+        proc = self.run_gate("--run-callback", "rsi",
+                             self.rsi_pending, "implemented")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self._callback_argv(),
+                         [os.path.realpath(self.rsi_pending), "implemented"])
 
     def test_no_callback_configured_is_a_clean_noop(self):
         proc = self.run_gate("--run-callback", "permissions",
