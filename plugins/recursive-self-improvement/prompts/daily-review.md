@@ -66,7 +66,7 @@ Read each log file. Look for resource-wasting patterns.
 
 See `categories.md` for full rules. For each finding, judge its severity:
 
-**Prioritize by resources wasted.** Judge severity primarily by how much human time and wellbeing it costs — a pattern that eats the user's time or causes frustration outweighs most other concerns. Token waste matters too — an issue that burns through context without progress is real waste, just less urgent than human cost. Assign each finding a priority tier: **critical**, **high**, **medium**, or **low**.
+**Prioritize by resources wasted.** Judge severity primarily by how much human time and wellbeing it costs — a pattern that eats the user's time or causes frustration outweighs most other concerns. Token waste matters too — an issue that burns through context without progress is real waste, just less urgent than human cost. Assign each finding a priority tier: **critical**, **high**, **medium**, or **low**. A recurring finding whose root cause (Step 6.5) matches an existing problem area should strengthen that area — reuse its slug and raise its weight — rather than spawn a new one.
 
 - **Productivity:** Claude needed rescuing — user stepped in with fixes, provided paths Claude should have found, corrected tool calls, rephrased the same request two or more times. Frustration signals are pointers — find the root cause.
 
@@ -86,6 +86,14 @@ For each finding, before writing:
 - Is there a skill/hook/CLAUDE.md rule that should have caught this? → note it in `existing_mitigation`
 - Was a similar problem area proposed before and rejected? → skip unless substantially more clear-cut
 
+## Step 6.5: Ask WHY Twice
+
+For each finding, before writing the observation, ask "why did this happen?" — then ask why again about the answer. Two chained whys. The second answer becomes the observation's `root_cause` field (Step 7).
+
+A root cause names a mechanism, not the symptom restated. "The cron job kept disappearing" is a symptom; "install path assumed crontab -e persists; on this host a declarative rebuild overwrites it" is a mechanism. If your second why still describes behavior, ask again.
+
+Symptom-only observations make later runs recycle the same findings without converging. The root cause is what lets a future ledger walk say "same mechanism, known area" instead of writing a duplicate.
+
 ## Step 7: Write Problem Areas and Observations
 
 **Problem areas:** For each new pattern, append to `~/.claude/recursive-self-improvement/observations/problem_areas.jsonl`:
@@ -97,10 +105,12 @@ For each finding, before writing:
 **Observations:** For each finding, append one JSON object (single line) to `~/.claude/recursive-self-improvement/observations/observations.jsonl`:
 
 ```json
-{"id":"OBS-YYYY-MM-DD-NNN","date":"YYYY-MM-DD","ts":"ISO-TIMESTAMP","category":"productivity","severity":"high","problem_areas":["slug-1","slug-2"],"source_logs":["PATH"],"source_sessions":["SESSION-ID"],"finding":"One paragraph. What pattern was detected and why it wastes resources.","existing_mitigation":"None found."}
+{"id":"OBS-YYYY-MM-DD-NNN","date":"YYYY-MM-DD","ts":"ISO-TIMESTAMP","category":"productivity","severity":"high","problem_areas":["slug-1","slug-2"],"source_logs":["PATH"],"source_sessions":["SESSION-ID"],"finding":"One paragraph. What pattern was detected and why it wastes resources.","root_cause":"install path assumed crontab -e persists; on this host a declarative rebuild overwrites it","existing_mitigation":"None found."}
 ```
 
 ID format: `OBS-YYYY-MM-DD-NNN` where NNN is zero-padded sequential for the day (001, 002, ...).
+
+`root_cause` is one line from Step 6.5 — it must name a mechanism, not restate the symptom.
 
 ## Step 8: Select Top daily_proposal_limit × 3
 
