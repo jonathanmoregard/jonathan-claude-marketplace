@@ -69,6 +69,18 @@ echo "Installing push script..."
 cp "$PLUGIN_ROOT/scripts/push-proposals.sh" "$TARGET/push-proposals.sh"
 chmod +x "$TARGET/push-proposals.sh"
 
+echo "Installing proposal intake gate..."
+# Independent scorer harness: annotates pending proposals with grep-cited
+# sharp|duplicate|rot verdicts before push-proposals.sh ships them for review.
+mkdir -p "$TARGET/scripts"
+cp "$PLUGIN_ROOT/scripts/proposal-intake-gate.py" "$TARGET/scripts/proposal-intake-gate.py"
+chmod +x "$TARGET/scripts/proposal-intake-gate.py"
+# Seed the gate config once; never clobber a user-edited one (it carries
+# host-local on_decision callback registrations).
+if [[ ! -f "$TARGET/proposals/gate-config.json" ]]; then
+  cp "$PLUGIN_ROOT/references/gate-config.default.json" "$TARGET/proposals/gate-config.json"
+fi
+
 echo "Removing old monthly review cron if present..."
 (crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-monthly") | crontab -
 
@@ -90,6 +102,6 @@ echo "Cleaning up..."
 rm -f "$TARGET/tmp/recursive-self-improvement-setup.yml"
 
 echo "Committing configuration..."
-cd "$TARGET" && git add recursive-self-improvement/ push-proposals.sh && git commit -m "chore: configure recursive self-improvement"
+cd "$TARGET" && git add recursive-self-improvement/ push-proposals.sh scripts/proposal-intake-gate.py proposals/gate-config.json && git commit -m "chore: configure recursive self-improvement"
 
 echo "Done."
