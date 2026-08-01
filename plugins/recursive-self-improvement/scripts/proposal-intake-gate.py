@@ -79,6 +79,11 @@ DEFAULTS = {
 VALID_VERDICTS = ("sharp", "duplicate", "rot")
 EVIDENCE_MAX = 200
 REPO_REF_RE = re.compile(r"(?:~|/home/[A-Za-z0-9._-]+)/Repos/([A-Za-z0-9._-]+)")
+# Candidate ids are embedded verbatim in the scorer's instruction text, so
+# both path components are allowlisted: no whitespace, no newlines, nothing
+# that could read as instructions to the scorer.
+FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}\.md$")
+SUBDIR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$")
 
 
 def log(msg):
@@ -137,6 +142,74 @@ def is_ungated_pending(text):
     return True
 
 
+def find_gate_block(lines, closing):
+    """(start, end) line indices of a gate: block inside the frontmatter
+    (end exclusive: the block is `gate:` plus its indented children), or
+    None when the frontmatter has no gate key."""
+    for i in range(1, closing):
+        if re.match(r"^gate:", lines[i]):
+            end = i + 1
+            while end < closing and re.match(r"^[ \t]+\S", lines[end]):
+                end += 1
+            return i, end
+    return None
+
+
+def parse_gate_block(lines, start, end):
+    """(verdict, date) as written in the block — either may be None."""
+    verdict = date = None
+    for line in lines[start + 1:end]:
+        m = re.match(r"^[ \t]+verdict:\s*(\S+)\s*$", line)
+        if m:
+            verdict = m.group(1)
+        m = re.match(r"^[ \t]+date:\s*(\S+)\s*$", line)
+        if m:
+            date = m.group(1)
+    return verdict, date
+
+
+def load_gate_log_index(cfg):
+    """{(qualified_file_id, date, verdict)} for every line this script has
+    written to the gate log. A gate: block in a proposal only counts as real
+    if it reconciles against one of these — producers write frontmatter
+    wholesale, so an unreconciled block is spurious and gets re-scored."""
+    index = set()
+    try:
+        with open(cfg["gate_log"], encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                date = entry.get("date") or str(entry.get("ts", ""))[:10]
+                index.add((entry.get("file"), date, entry.get("verdict")))
+    except OSError:
+        pass
+    return index
+
+
+def atomic_write(path, text):
+    """Atomic same-directory replace, preserving the file's mode."""
+    mode = os.stat(path).st_mode
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".gate-tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, mode & 0o7777)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def discover_subdirs(cfg):
     root = cfg["spine_root"]
     if cfg["subdirs"]:
@@ -150,16 +223,30 @@ def discover_subdirs(cfg):
     for name in names:
         if any(fnmatch.fnmatch(name, pat) for pat in cfg["excluded_subdirs"]):
             continue
+        if not SUBDIR_RE.match(name):
+            # Subdir names become half of every candidate id embedded in the
+            # scorer instruction text — same allowlist as basenames.
+            log("warning: skipping subdir with nonconforming name under %s" % root)
+            continue
         full = os.path.join(root, name)
         if os.path.isdir(full):  # follows symlinks (rsi is one in production)
             out.append((name, full))
     return out
 
 
-def collect_candidates(cfg):
-    """[{id, path, subdir, basename, content}] for every ungated pending
-    proposal. `id` is the basename unless two subdirs collide on it."""
-    candidates = []
+def collect_candidates(cfg, repair=True):
+    """([{id, path, subdir, basename, content}], [exclusion notes]) for every
+    ungated pending proposal. Ids are always subdir-qualified
+    (`<subdir>/<basename>`) — one scheme everywhere, including the gate log.
+
+    A pending file carrying a gate: block is only skipped when that block
+    reconciles against the gate log (qualified id + date + verdict). An
+    unreconciled block is spurious (producers write frontmatter wholesale):
+    it is stripped from the file (when `repair` is true) and the proposal is
+    re-scored this run.
+    """
+    log_index = load_gate_log_index(cfg)
+    candidates, excluded = [], []
     for subdir, dirpath in discover_subdirs(cfg):
         try:
             entries = sorted(os.listdir(dirpath))
@@ -170,6 +257,13 @@ def collect_candidates(cfg):
                 continue
             if any(fnmatch.fnmatch(fname, pat) for pat in cfg["excluded_files"]):
                 continue
+            if not FILENAME_RE.match(fname):
+                excluded.append({
+                    "event": "excluded-nonconforming-filename",
+                    "subdir": subdir,
+                    "file": fname[:200],
+                })
+                continue
             fpath = os.path.join(dirpath, fname)
             if not os.path.isfile(fpath):
                 continue
@@ -178,21 +272,32 @@ def collect_candidates(cfg):
                     content = fh.read()
             except OSError:
                 continue
-            if is_ungated_pending(content):
-                candidates.append({
-                    "path": os.path.abspath(fpath),
-                    "subdir": subdir,
-                    "basename": fname,
-                    "content": content,
-                })
-    seen, collisions = set(), set()
-    for c in candidates:
-        if c["basename"] in seen:
-            collisions.add(c["basename"])
-        seen.add(c["basename"])
-    for c in candidates:
-        c["id"] = (c["subdir"] + "/" + c["basename"]) if c["basename"] in collisions else c["basename"]
-    return candidates
+            parsed = split_frontmatter(content)
+            if parsed is None:
+                continue
+            lines, closing = parsed
+            fm = "".join(lines[1:closing])
+            if not re.search(r"(?m)^status:\s*pending\s*$", fm):
+                continue
+            qid = subdir + "/" + fname
+            block = find_gate_block(lines, closing)
+            if block is not None:
+                verdict, bdate = parse_gate_block(lines, block[0], block[1])
+                if (qid, bdate, verdict) in log_index:
+                    continue  # genuinely gated by a prior run of this script
+                log("warning: %s carries a gate block with no matching "
+                    "gate-log line — stripping it and re-scoring" % qid)
+                content = "".join(lines[:block[0]] + lines[block[1]:])
+                if repair:
+                    atomic_write(fpath, content)
+            candidates.append({
+                "id": qid,
+                "path": os.path.abspath(fpath),
+                "subdir": subdir,
+                "basename": fname,
+                "content": content,
+            })
+    return candidates, excluded
 
 
 def infer_repos(candidates, cfg):
@@ -367,19 +472,7 @@ def annotate(candidate, verdict, evidence, model, today):
         "  date: %s\n" % (verdict, json.dumps(evidence), model, today)
     )
     new_text = "".join(lines[:closing]) + block + "".join(lines[closing:])
-    mode = os.stat(path).st_mode
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".gate-tmp-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(new_text)
-        os.chmod(tmp, mode & 0o7777)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    atomic_write(path, new_text)
     return True
 
 
@@ -406,15 +499,24 @@ def main(argv=None):
         log("error: cannot load gate config %s: %s" % (args.config, exc))
         return 1
 
-    candidates = collect_candidates(cfg)
+    candidates, excluded = collect_candidates(cfg, repair=not args.list)
+
+    if args.list:
+        for note in excluded:
+            log("excluded (nonconforming filename) in subdir: %s" % note["subdir"])
+        for c in candidates:
+            log("would gate: %s" % c["path"])
+        return 0
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    for note in excluded:
+        log("warning: excluded nonconforming filename in subdir %s (noted in gate log)"
+            % note["subdir"])
+        append_gate_log(cfg, dict(note, ts=now))
+
     if not candidates:
         log("proposal-intake-gate: nothing to gate (no ungated pending proposals under %s)"
             % cfg["spine_root"])
-        return 0
-
-    if args.list:
-        for c in candidates:
-            log("would gate: %s" % c["path"])
         return 0
 
     repos = infer_repos(candidates, cfg)
@@ -442,7 +544,8 @@ def main(argv=None):
             gated += 1
             append_gate_log(cfg, {
                 "ts": datetime.datetime.now().isoformat(timespec="seconds"),
-                "file": c["basename"],
+                "date": today,
+                "file": c["id"],
                 "path": c["path"],
                 "subdir": c["subdir"],
                 "verdict": verdict,
