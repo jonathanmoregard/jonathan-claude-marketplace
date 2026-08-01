@@ -8,7 +8,8 @@
     "model": "claude-fable-5",
     "fallback_model": "opus",
     "allowed_tools": "Read Grep Glob",
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "batch_size": 10
   },
   "search_paths": ["~/.claude"],
   "pr_context": {

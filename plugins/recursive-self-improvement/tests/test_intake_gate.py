@@ -42,10 +42,20 @@ printf '%%s\\n<<<END-OF-CALL>>>\\n' "$*" >> "$STUB_DIR/claude-calls.log"
 # The pr-context temp file is deleted by the gate after dispatch (R6);
 # snapshot it at scorer time so tests can still inspect what the scorer saw.
 cp "${TMPDIR:-/tmp}"/proposal-gate-pr-context-*.md "$STUB_DIR/pr-context-copy.md" 2>/dev/null || true
+# Current call number (this call's record is already appended to the log).
+count=$(grep -c '<<<END-OF-CALL>>>' "$STUB_DIR/claude-calls.log")
+emit() {
+  # Chunked dispatches: a per-call canned file wins over the shared default.
+  if [[ -f "$STUB_DIR/claude-stdout-call-$count.json" ]]; then
+    cat "$STUB_DIR/claude-stdout-call-$count.json"
+  else
+    cat "$STUB_DIR/claude-stdout.json"
+  fi
+}
 mode=$(cat "$STUB_DIR/claude-mode" 2>/dev/null || echo happy)
 case "$mode" in
   happy)
-    cat "$STUB_DIR/claude-stdout.json" ;;
+    emit ;;
   malformed)
     echo "Verdict thoughts: none of this is JSON, sorry." ;;
   fail-primary)
@@ -53,10 +63,16 @@ case "$mode" in
       echo "You've hit your org's monthly usage limit" >&2
       exit 1
     fi
-    cat "$STUB_DIR/claude-stdout.json" ;;
+    emit ;;
   fail-all)
     echo "You've hit your org's monthly usage limit" >&2
     exit 1 ;;
+  fail-from-call-2)
+    if [[ "$count" -ge 2 ]]; then
+      echo "You've hit your org's monthly usage limit" >&2
+      exit 1
+    fi
+    emit ;;
 esac
 """ % {"primary": PRIMARY_MODEL}
 
@@ -945,6 +961,137 @@ class TestRunCallbackLocking(GateHarness):
         self.assertFalse(
             os.path.exists(os.path.join(self.stub_dir, "callback-argv")),
             msg="callback must not run while the gate lock is held elsewhere")
+
+
+class TestCoverageInclusion(GateHarness):
+    """Round-5 item 1: push-proposals.sh ships every .md in the spine subdirs,
+    so the gate must cover every allowlisted .md. No frontmatter, or
+    frontmatter without a status field, is pending-equivalent; only an
+    explicit non-pending status (or a reconciled gate block) opts out."""
+
+    BODY = "## Raw evaluator output\n\nAllow Read under ~/.claude/logs — 31 prompts.\n"
+
+    def test_frontmatterless_md_gated_with_prepended_frontmatter(self):
+        bare = os.path.join(self.spine, "permissions", "2026-08-02-raw-evaluator.md")
+        self._write(bare, self.BODY)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-raw-evaluator.md", "verdict": "sharp",
+             "evidence": "no matching allow rule found under ~/.claude settings"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        text = self.read(bare)
+        self.assertTrue(text.startswith("---\ngate:\n"),
+                        msg="annotation must be a freshly prepended frontmatter block")
+        self.assertIn("verdict: sharp", text)
+        # Body bytes after the created frontmatter are untouched.
+        closing = text.index("\n---\n", 3)
+        self.assertEqual(text[closing + len("\n---\n"):], self.BODY)
+        by_file = {e["file"]: e for e in self.new_gate_log_entries()}
+        self.assertEqual(by_file["permissions/2026-08-02-raw-evaluator.md"]["verdict"],
+                         "sharp")
+
+        # Idempotence: the gate-only frontmatter (no status field) written
+        # above must reconcile on the next run — no re-dispatch, no rewrite.
+        calls_after_first = len(self.claude_calls())
+        second = self.run_gate()
+        self.assertEqual(second.returncode, 0, msg=second.stdout + second.stderr)
+        self.assertEqual(len(self.claude_calls()), calls_after_first)
+        self.assertEqual(self.read(bare), text)
+
+    def test_missing_status_field_is_pending_equivalent(self):
+        # The permissions evaluator writes its own frontmatter shape with no
+        # status: field — must be gated, inside the existing frontmatter.
+        prop = ("---\npattern_key: \"Read:/home/jonathan/.claude/logs\"\n"
+                "date: 2026-08-02\n---\n\n12 prompts/week.\n")
+        path = os.path.join(self.spine, "permissions", "2026-08-02-no-status.md")
+        self._write(path, prop)
+        self.canned_verdicts["verdicts"].append(
+            {"file": "permissions/2026-08-02-no-status.md", "verdict": "sharp",
+             "evidence": "no matching allow rule found in ~/.claude settings files"})
+        self._set_stdout(self.canned_verdicts)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        text = self.read(path)
+        self.assertEqual(text.count("---\n"), 2, msg="no second frontmatter block")
+        self.assertIn("gate:", text)
+        self.assertIn("pattern_key", text)
+        self.assertNotIn("status:", text, msg="the gate must not invent a status field")
+
+    def test_rejected_status_still_skipped(self):
+        rejected = os.path.join(self.legacy, "2026-08-01-rejected-file.md")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("rejected-file", self.claude_calls()[0])
+        self.assertEqual(self.read(rejected), REJECTED, msg="file must stay untouched")
+
+    def test_dotfile_still_skipped(self):
+        dot = os.path.join(self.spine, "permissions", ".2026-08-02-scratch.md")
+        self._write(dot, "scratch notes, not a proposal")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("scratch", self.claude_calls()[0])
+        self.assertEqual(self.read(dot), "scratch notes, not a proposal")
+
+
+class TestChunkedDispatch(GateHarness):
+    """Round-5 item 2: candidates go to the scorer in chunks of
+    scorer.batch_size (default 10) — a 50-file backlog must never be one
+    prompt. A failed chunk leaves only that chunk ungated (exit 4);
+    annotated chunks stay annotated."""
+
+    def setUp(self):
+        super().setUp()
+        cfg = json.loads(self.read(self.config_path))
+        cfg["scorer"]["batch_size"] = 1
+        self._write(self.config_path, json.dumps(cfg))
+        # Candidate order is deterministic: subdirs sorted (permissions before
+        # rsi), files sorted within. Chunk 1 = permissions, chunk 2 = rsi.
+        by_file = {e["file"]: e for e in self.canned_verdicts["verdicts"]}
+        self._write(os.path.join(self.stub_dir, "claude-stdout-call-1.json"),
+                    json.dumps({"verdicts":
+                                [by_file["permissions/2026-08-01-read-claude.md"]]}))
+        self._write(os.path.join(self.stub_dir, "claude-stdout-call-2.json"),
+                    json.dumps({"verdicts":
+                                [by_file["rsi/2026-08-01-cap-fallback.md"]]}))
+
+    def test_two_chunks_both_annotated(self):
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        calls = self.claude_calls()
+        self.assertEqual(len(calls), 2,
+                         msg="batch_size=1 with 2 candidates = 2 dispatches")
+        self.assertIn("read-claude", calls[0])
+        self.assertNotIn("cap-fallback", calls[0],
+                         msg="each chunk's prompt lists only its own files")
+        self.assertIn("cap-fallback", calls[1])
+        self.assertNotIn("read-claude", calls[1])
+        self.assertIn("gate:", self.read(self.perm_pending))
+        self.assertIn("gate:", self.read(self.rsi_pending))
+        self.assertEqual(len(self.new_gate_log_entries()), 2)
+
+    def test_failed_second_chunk_leaves_only_that_chunk_ungated(self):
+        self._set_mode("fail-from-call-2")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 4, msg=proc.stdout + proc.stderr)
+        self.assertIn("gate:", self.read(self.perm_pending),
+                      msg="chunk 1's annotation must survive chunk 2's failure")
+        self.assertNotIn("gate:", self.read(self.rsi_pending))
+        self.assertEqual(len(self.new_gate_log_entries()), 1)
+        # Chunk 2 tried primary then fallback: three stub calls in total.
+        self.assertEqual(len(self.claude_calls()), 3)
+
+    def test_invalid_batch_size_rejected_at_load(self):
+        cfg = json.loads(self.read(self.config_path))
+        cfg["scorer"]["batch_size"] = 0
+        self._write(self.config_path, json.dumps(cfg))
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("batch_size", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [],
+                         msg="a rejected config must dispatch nothing")
 
 
 class TestNothingToGate(GateHarness):
