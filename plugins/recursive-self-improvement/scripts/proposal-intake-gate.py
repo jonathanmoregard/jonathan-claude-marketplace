@@ -34,6 +34,7 @@ Exit codes:
 """
 import argparse
 import datetime
+import fcntl
 import fnmatch
 import json
 import os
@@ -582,6 +583,24 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         log("error: cannot load gate config %s: %s" % (args.config, exc))
         return 1
+
+    if not args.list:
+        # Single-instance discipline (R9): the gating run strips/annotates
+        # frontmatter (check-then-replace) and appends to the gate log —
+        # two concurrent runs would interleave both. --list never writes
+        # (repair=False below), so it stays lock-free.
+        lock_path = os.path.join(cfg["spine_root"], ".gate.lock")
+        try:
+            lock_fh = open(lock_path, "w")  # held until process exit
+        except OSError as exc:
+            log("error: cannot open lock file %s: %s" % (lock_path, exc))
+            return 1
+        try:
+            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            log("proposal-intake-gate: another instance holds the lock at %s "
+                "— exiting without gating" % lock_path)
+            return 0
 
     candidates, excluded = collect_candidates(cfg, repair=not args.list)
 

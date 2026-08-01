@@ -10,6 +10,7 @@ with a fixture proposals spine and puts a stub bin dir first on PATH. The stub
 `claude` logs its argv and emits canned output selected by a mode file; the
 stub `gh` emits canned merged-PR JSON or fails on demand.
 """
+import fcntl
 import importlib.util
 import json
 import os
@@ -680,6 +681,25 @@ class TestPrContextWallCap(unittest.TestCase):
         with open(os.path.join(tmp, "gh.log"), encoding="utf-8") as fh:
             self.assertEqual(fh.read().count("called"), 1,
                              msg="only the first repo fits inside the cap")
+
+
+class TestSingleInstance(GateHarness):
+    """R9: exclusive non-blocking flock on <spine>/.gate.lock around the run —
+    covers the annotate check-then-replace window and gate-log interleaving."""
+
+    def test_second_instance_exits_cleanly_when_lock_held(self):
+        lock_path = os.path.join(self.spine, ".gate.lock")
+        holder = open(lock_path, "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("lock", (proc.stdout + proc.stderr).lower())
+        self.assertEqual(self.claude_calls(), [],
+                         msg="a locked-out instance must dispatch nothing")
+        self.assertNotIn("gate:", self.read(self.rsi_pending))
+        self.assertEqual(self.new_gate_log_entries(), [])
 
 
 class TestNothingToGate(GateHarness):
