@@ -143,7 +143,8 @@ class GateHarness(unittest.TestCase):
         os.symlink(self.legacy, os.path.join(self.spine, "rsi"))
         os.makedirs(os.path.join(self.spine, "permissions"))
         os.makedirs(os.path.join(self.spine, "archived"))
-        os.makedirs(os.path.join(self.home, "Repos", "research-agent"))
+        # A real checkout has .git — pr-context only trusts dirs that do.
+        os.makedirs(os.path.join(self.home, "Repos", "research-agent", ".git"))
 
         self.rsi_pending = os.path.join(self.legacy, "2026-08-01-cap-fallback.md")
         self._write(self.rsi_pending, PENDING_RSI)
@@ -426,6 +427,58 @@ class TestFilenameValidation(GateHarness):
         self.assertEqual(len(events), 1)
         self.assertIn("nonconforming", events[0]["event"])
         self.assertEqual(events[0]["subdir"], "permissions")
+
+
+class TestConfigContainment(GateHarness):
+    """R5: config-supplied paths must stay under $HOME; pr-context only runs
+    gh inside real checkouts (dir containing .git); subdir symlinks may not
+    escape $HOME (the production rsi symlink resolves inside ~/.claude and
+    must keep working — covered by every other test in this file)."""
+
+    def _rewrite_config(self, **overrides):
+        cfg = json.loads(self.read(self.config_path))
+        cfg.update(overrides)
+        self._write(self.config_path, json.dumps(cfg))
+
+    def test_spine_root_outside_home_rejected_at_load(self):
+        outside = os.path.join(self.tmp, "outside-spine")
+        os.makedirs(outside)
+        self._rewrite_config(spine_root=outside)
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("outside", (proc.stdout + proc.stderr).lower())
+        self.assertEqual(self.claude_calls(), [],
+                         msg="a rejected config must dispatch nothing")
+
+    def test_gate_log_outside_home_rejected_at_load(self):
+        self._rewrite_config(gate_log=os.path.join(self.tmp, "evil-log.jsonl"))
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [])
+
+    def test_search_path_outside_home_rejected_at_load(self):
+        self._rewrite_config(search_paths=["/etc"])
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [])
+
+    def test_subdir_symlink_escaping_home_is_skipped(self):
+        outside = os.path.join(self.tmp, "outside-subdir")
+        os.makedirs(outside)
+        self._write(os.path.join(outside, "2026-08-01-planted.md"), PENDING_RSI)
+        os.symlink(outside, os.path.join(self.spine, "escape"))
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertNotIn("planted", self.claude_calls()[0],
+                         msg="a subdir resolving outside $HOME must be skipped")
+
+    def test_repo_without_git_dir_gets_no_gh_call(self):
+        shutil.rmtree(os.path.join(self.home, "Repos", "research-agent", ".git"))
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.stub_dir, "gh-calls.log")),
+            msg="gh must not run inside a dir that is not a git checkout")
 
 
 class TestNothingToGate(GateHarness):

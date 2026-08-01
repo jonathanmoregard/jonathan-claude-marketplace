@@ -90,11 +90,28 @@ def log(msg):
     print(msg, flush=True)
 
 
+def contained(path, root):
+    """True when `path` realpath-resolves to `root` or below it."""
+    rp = os.path.realpath(path)
+    rr = os.path.realpath(root)
+    return rp == rr or rp.startswith(rr + os.sep)
+
+
+def require_under_home(path, label):
+    home = os.path.expanduser("~")
+    if not contained(path, home):
+        raise ValueError("%s %r resolves outside %s — refusing config"
+                         % (label, path, home))
+
+
 def load_config(path):
     """Merge the user's config file over DEFAULTS (one level of nesting deep).
 
     A missing config file is fine — defaults apply. A present-but-broken one
-    is not: better to stop than to gate against the wrong spine.
+    is not: better to stop than to gate against the wrong spine. Config paths
+    that write or get grepped (spine_root, gate_log, search_paths) must
+    realpath-resolve under $HOME — this script runs unattended and its config
+    file is only as trusted as whatever last wrote it.
     """
     cfg = json.loads(json.dumps(DEFAULTS))  # deep copy
     if os.path.isfile(path):
@@ -111,6 +128,10 @@ def load_config(path):
     pr = cfg["pr_context"]
     pr["repo_roots"] = [os.path.expanduser(p) for p in pr["repo_roots"]]
     pr["extra_repos"] = {k: os.path.expanduser(v) for k, v in pr["extra_repos"].items()}
+    require_under_home(cfg["spine_root"], "spine_root")
+    require_under_home(cfg["gate_log"], "gate_log")
+    for p in cfg["search_paths"]:
+        require_under_home(p, "search_paths entry")
     return cfg
 
 
@@ -229,8 +250,14 @@ def discover_subdirs(cfg):
             log("warning: skipping subdir with nonconforming name under %s" % root)
             continue
         full = os.path.join(root, name)
-        if os.path.isdir(full):  # follows symlinks (rsi is one in production)
-            out.append((name, full))
+        if not os.path.isdir(full):  # follows symlinks (rsi is one in production)
+            continue
+        # Symlinked subdirs are legitimate (rsi resolves inside ~/.claude)
+        # but must stay logically rooted: never follow one out of $HOME.
+        if not contained(full, os.path.expanduser("~")):
+            log("warning: skipping subdir %s — resolves outside $HOME" % name)
+            continue
+        out.append((name, full))
     return out
 
 
@@ -300,9 +327,15 @@ def collect_candidates(cfg, repair=True):
     return candidates, excluded
 
 
+def is_git_checkout(path):
+    """gh runs with cwd inside these dirs — only trust real checkouts
+    (a dir containing .git; .git may be a file in worktrees)."""
+    return os.path.isdir(path) and os.path.exists(os.path.join(path, ".git"))
+
+
 def infer_repos(candidates, cfg):
     """name -> checkout path for every ~/Repos/<name> reference that resolves
-    to a real directory, plus configured extra_repos."""
+    to a real git checkout, plus configured extra_repos (same requirement)."""
     pr = cfg["pr_context"]
     names = set()
     for c in candidates:
@@ -311,10 +344,14 @@ def infer_repos(candidates, cfg):
     for name in sorted(names):
         for root in pr["repo_roots"]:
             path = os.path.join(root, name)
-            if os.path.isdir(path):
+            if is_git_checkout(path):
                 repos[name] = path
                 break
-    repos.update(pr["extra_repos"])
+    for name, path in pr["extra_repos"].items():
+        if is_git_checkout(path):
+            repos[name] = path
+        else:
+            log("warning: extra_repos[%r] is not a git checkout — skipped" % name)
     return repos
 
 
