@@ -30,6 +30,54 @@ from pathlib import Path
 
 EXCERPT_MAX_CHARS = 200
 
+# Secret-shape redaction, ported from ~/.claude/hooks/prompt-log.py so both
+# capture surfaces share one posture. Correction messages routinely quote
+# the offending paste ("no, not that key, I said use sk-ant-...") — the
+# excerpt must never persist the token. Order matters: structured (PEM,
+# JWT) first, named vendors, semi-structured, high-entropy fallback LAST
+# (skipped for cwd so long path segments survive).
+SECRET_PATTERNS = (
+    (re.compile(r"-----BEGIN (?:[A-Z0-9 ]*)PRIVATE KEY-----[\s\S]+?-----END (?:[A-Z0-9 ]*)PRIVATE KEY-----"), "<REDACTED:pem>"),
+    (re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"), "<REDACTED:jwt>"),
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), "<REDACTED:anthropic>"),
+    (re.compile(r"sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}"), "<REDACTED:openai>"),
+    (re.compile(r"(?:sk|rk|pk|whsec)_(?:live|test)_[A-Za-z0-9]{20,}"), "<REDACTED:stripe>"),
+    (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "<REDACTED:github-pat>"),
+    (re.compile(r"gho_[A-Za-z0-9]{20,}"), "<REDACTED:github-oauth>"),
+    (re.compile(r"ghs_[A-Za-z0-9]{20,}"), "<REDACTED:github-server>"),
+    (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "<REDACTED:github-fine-grained>"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "<REDACTED:aws-access-key>"),
+    (re.compile(r"ASIA[0-9A-Z]{16}"), "<REDACTED:aws-sts>"),
+    (re.compile(r"AIza[0-9A-Za-z_\-]{35}"), "<REDACTED:google-api-key>"),
+    (re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"), "<REDACTED:slack>"),
+    (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{20,}"), "Bearer <REDACTED:bearer>"),
+    (re.compile(
+        r"(?i)\b(?:password|passwd|secret|token|"
+        r"api[_\-]?key|api[_\-]?secret|"
+        r"access[_\-]?(?:key|token|secret)|"
+        r"refresh[_\-]?token|"
+        r"client[_\-]?(?:secret|key)|"
+        r"secret[_\-]?(?:key|token|id)|"
+        r"private[_\-]?key|"
+        r"auth[_\-]?(?:token|key)|"
+        r"bearer[_\-]?token|"
+        r"session[_\-]?(?:token|key)|"
+        r"db[_\-]?password|database[_\-]?url|"
+        r"encryption[_\-]?key|signing[_\-]?key|master[_\-]?key|"
+        r"shared[_\-]?access[_\-]?key|account[_\-]?key"
+        r")['\"]?\s*[:=]\s*(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s]+)"
+    ), "<REDACTED:kv-secret>"),
+    (re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s/@:]+:[^\s/@]+@[^\s]+"), "<REDACTED:url-userinfo>"),
+    # High-entropy fallback — MUST stay last; skipped for cwd.
+    (re.compile(r"\b[A-Za-z0-9+=_]{40,}\b"), "<REDACTED:high-entropy-blob>"),
+)
+
+
+def redact(text):
+    for pat, marker in SECRET_PATTERNS:
+        text = pat.sub(marker, text)
+    return text
+
 # Deterministic mapping table. First match wins, top to bottom — order is
 # the contract: more specific patterns MUST precede broader ones that would
 # shadow them (told_you_never before i_said_told). Buckets:
@@ -71,8 +119,19 @@ def classify(prompt):
 
 
 def make_excerpt(text):
-    """Strip control chars, then truncate to EXCERPT_MAX_CHARS."""
-    return text.translate(_CTRL_TABLE)[:EXCERPT_MAX_CHARS]
+    """Redact secret shapes, strip control chars, then truncate.
+
+    Redaction runs on the FULL text before truncation — truncating first
+    could cut a token's tail (or a PEM END marker) and defeat the regex,
+    leaking the head of a secret (same ordering rule as prompt-log.py).
+    """
+    return redact(text).translate(_CTRL_TABLE)[:EXCERPT_MAX_CHARS]
+
+
+def _redact_cwd(text):
+    for pat, marker in SECRET_PATTERNS[:-1]:
+        text = pat.sub(marker, text)
+    return text
 
 
 def default_out_path():
@@ -117,7 +176,9 @@ def main():
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "session_id": str(payload.get("session_id") or ""),
-            "cwd": str(payload.get("cwd") or ""),
+            # cwd skips the high-entropy fallback (last pattern) so long
+            # path segments survive; vendor/kv/url patterns still apply.
+            "cwd": _redact_cwd(str(payload.get("cwd") or "")),
             "bucket": bucket,
             "pattern_id": pattern_id,
             "excerpt": make_excerpt(prompt),

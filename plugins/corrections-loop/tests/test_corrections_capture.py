@@ -105,7 +105,9 @@ class TestClassify(unittest.TestCase):
 
 class TestExcerpt(unittest.TestCase):
     def test_truncates_to_200_chars(self):
-        long = "stop doing that " + "x" * 500
+        # Filler uses short space-separated words so the high-entropy
+        # redaction fallback (40+ char unbroken runs) leaves it alone.
+        long = "stop doing that " + "xx " * 200
         excerpt = MOD.make_excerpt(long)
         self.assertEqual(len(excerpt), 200)
         self.assertTrue(excerpt.startswith("stop doing that "))
@@ -126,8 +128,44 @@ class TestExcerpt(unittest.TestCase):
         # 200 chars of payload preceded by control chars: after stripping,
         # the full payload must fit — stripping first means control chars
         # don't eat the budget.
-        raw = "\x00" * 50 + "y" * 200
-        self.assertEqual(MOD.make_excerpt(raw), "y" * 200)
+        payload_text = ("y" * 30 + " ") * 7  # 217 chars, runs < 40 → no redaction
+        raw = "\x00" * 50 + payload_text
+        self.assertEqual(MOD.make_excerpt(raw), payload_text[:200])
+
+
+class TestRedaction(unittest.TestCase):
+    def test_vendor_tokens_redacted(self):
+        raw = "no, not that key, I said use sk-ant-" + "a" * 24 + " for this"
+        excerpt = MOD.make_excerpt(raw)
+        self.assertNotIn("sk-ant-" + "a" * 24, excerpt)
+        self.assertIn("<REDACTED:anthropic>", excerpt)
+
+    def test_kv_secret_redacted(self):
+        excerpt = MOD.make_excerpt("wrong file, the password=hunter2hunter2 goes elsewhere")
+        self.assertNotIn("hunter2", excerpt)
+        self.assertIn("<REDACTED:kv-secret>", excerpt)
+
+    def test_redaction_before_truncation(self):
+        # Token straddles the 200-char boundary: redact-then-truncate must
+        # not leak the token head.
+        token = "ghp_" + "b" * 36
+        raw = "stop doing that " + "x" * 190 + token
+        excerpt = MOD.make_excerpt(raw)
+        self.assertNotIn("ghp_", excerpt)
+
+    def test_high_entropy_fallback(self):
+        blob = "A" * 45
+        excerpt = MOD.make_excerpt("undo that paste: " + blob)
+        self.assertNotIn(blob, excerpt)
+
+    def test_cwd_skips_entropy_fallback(self):
+        long_path = "/home/user/" + "a" * 45 + "/repo"
+        self.assertEqual(MOD._redact_cwd(long_path), long_path)
+        self.assertIn("<REDACTED:github-pat>", MOD._redact_cwd("/tmp/ghp_" + "c" * 24))
+
+    def test_benign_text_untouched(self):
+        raw = "wrong branch — use feat/proposal-intake-gate instead"
+        self.assertEqual(MOD.make_excerpt(raw), raw)
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +259,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(len(self.out.read_text().splitlines()), 1)
 
     def test_excerpt_truncated_and_control_stripped_end_to_end(self):
-        raw = "stop doing\x00 this\n" + "z" * 400
+        raw = "stop doing\x00 this\n" + "zz " * 150
         run_hook(payload(raw), self.home)
         entry = json.loads(self.out.read_text().splitlines()[0])
         self.assertEqual(len(entry["excerpt"]), 200)
