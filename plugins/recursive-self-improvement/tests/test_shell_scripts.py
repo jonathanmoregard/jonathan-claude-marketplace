@@ -155,6 +155,31 @@ class TestPushProposalsGateEnforcement(ShellHarness):
         self.assertNotIn(".gate.lock", committed)
 
 
+class TestPushGitCheckoutGuard(ShellHarness):
+    """R9 item 6: git add/commit/push assume ~/.claude is a git checkout —
+    when it is not, fail with one clear message before staging instead of
+    whatever confusing error git add would emit."""
+
+    def test_non_git_claude_dir_aborts_before_staging(self):
+        # Plain dir, NO git init. Symlink guard and gate must both pass so
+        # the failure observed is the checkout guard itself.
+        legacy = os.path.join(self.claude, "recursive-self-improvement",
+                              "proposals")
+        os.makedirs(legacy)
+        os.makedirs(os.path.join(self.claude, "proposals"))
+        os.symlink(legacy, os.path.join(self.claude, "proposals", "rsi"))
+        gate = os.path.join(self.claude, "scripts", "proposal-intake-gate.py")
+        os.makedirs(os.path.dirname(gate), exist_ok=True)
+        with open(gate, "w", encoding="utf-8") as fh:
+            fh.write("import sys\nsys.exit(0)\n")
+
+        proc = self.run_script(PUSH)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertIn("not a git checkout", proc.stderr)
+        self.assertNotIn("No proposal changes", proc.stdout,
+                         msg="staging flow must not be reached")
+
+
 class TestPushSymlinkGuard(ShellHarness):
     """Round-7 item 1: the gate's conformance scan reaches the legacy rsi
     content ONLY through the proposals/rsi symlink, while push-proposals.sh

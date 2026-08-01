@@ -240,13 +240,14 @@ class GateHarness(unittest.TestCase):
         text = payload if isinstance(payload, str) else json.dumps(payload)
         self._write(os.path.join(self.stub_dir, "claude-stdout.json"), text)
 
-    def run_gate(self, *args):
+    def run_gate(self, *args, **env_extra):
         env = dict(os.environ)
         env["HOME"] = self.home
         env["PATH"] = self.bin_dir + os.pathsep + env.get("PATH", "")
         env["STUB_DIR"] = self.stub_dir
         env["TMPDIR"] = self.tmpdir
         env.pop("PROPOSAL_GATE_CONFIG", None)
+        env.update(env_extra)
         return subprocess.run(
             [sys.executable, GATE] + list(args), env=env, cwd=self.tmp,
             capture_output=True, text=True, timeout=120,
@@ -588,7 +589,7 @@ class TestConfigContainment(GateHarness):
         os.makedirs(outside)
         self._rewrite_config(spine_root=outside)
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
         self.assertIn("outside", (proc.stdout + proc.stderr).lower())
         self.assertEqual(self.claude_calls(), [],
                          msg="a rejected config must dispatch nothing")
@@ -596,13 +597,13 @@ class TestConfigContainment(GateHarness):
     def test_gate_log_outside_home_rejected_at_load(self):
         self._rewrite_config(gate_log=os.path.join(self.tmp, "evil-log.jsonl"))
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
         self.assertEqual(self.claude_calls(), [])
 
     def test_search_path_outside_home_rejected_at_load(self):
         self._rewrite_config(search_paths=["/etc"])
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
         self.assertEqual(self.claude_calls(), [])
 
     def test_extra_repo_outside_home_rejected_at_load(self):
@@ -610,7 +611,7 @@ class TestConfigContainment(GateHarness):
         # same containment invariant as search_paths.
         self._rewrite_config(pr_context={"extra_repos": {"evil": "/etc"}})
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
         self.assertIn("outside", (proc.stdout + proc.stderr).lower())
         self.assertEqual(self.claude_calls(), [])
 
@@ -631,6 +632,139 @@ class TestConfigContainment(GateHarness):
         self.assertFalse(
             os.path.exists(os.path.join(self.stub_dir, "gh-calls.log")),
             msg="gh must not run inside a dir that is not a git checkout")
+
+
+class TestScorerConfigValidation(GateHarness):
+    """R9 items 1/3/5: the read-only-scorer invariant and scalar hygiene are
+    enforced STRUCTURALLY at config load — exit 2, nothing dispatched, no
+    matter whether the bad value came from a user config or (hypothetically)
+    the built-in defaults."""
+
+    def _set_scorer(self, **overrides):
+        cfg = json.loads(self.read(self.config_path))
+        cfg["scorer"].update(overrides)
+        self._write(self.config_path, json.dumps(cfg))
+
+    def test_allowed_tools_with_write_rejected(self):
+        self._set_scorer(allowed_tools="Read Grep Glob Write")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
+        self.assertIn("allowed_tools", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [],
+                         msg="a write-capable scorer config must dispatch nothing")
+
+    def test_allowed_tools_bash_and_unknown_tokens_rejected(self):
+        for tools in ("Bash", "Read Edit", "Read Grep Glob Sneaky"):
+            self._set_scorer(allowed_tools=tools)
+            proc = self.run_gate()
+            self.assertEqual(proc.returncode, 2,
+                             msg="%r must be rejected: %s" % (tools, proc.stdout + proc.stderr))
+            self.assertEqual(self.claude_calls(), [])
+
+    def test_allowed_tools_read_alone_accepted(self):
+        self._set_scorer(allowed_tools="Read")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        calls = self.claude_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--allowedTools Read -p", calls[0])
+
+    def test_allowed_tools_empty_rejected(self):
+        for tools in ("", "   "):
+            self._set_scorer(allowed_tools=tools)
+            proc = self.run_gate()
+            self.assertEqual(proc.returncode, 2,
+                             msg="%r must be rejected: %s" % (tools, proc.stdout + proc.stderr))
+            self.assertEqual(self.claude_calls(), [])
+
+    def test_model_with_newline_rejected_at_load(self):
+        self._set_scorer(model="opus\nid: injected")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
+        self.assertIn("scorer.model", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [])
+
+    def test_model_with_hash_or_leading_dash_rejected_at_load(self):
+        for bad in ("opus # comment", "-print-injection", "a" * 65):
+            self._set_scorer(model=bad)
+            proc = self.run_gate()
+            self.assertEqual(proc.returncode, 2,
+                             msg="%r must be rejected: %s" % (bad, proc.stdout + proc.stderr))
+            self.assertEqual(self.claude_calls(), [])
+
+    def test_bad_fallback_model_rejected_at_load(self):
+        self._set_scorer(fallback_model="opus\n#!")
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
+        self.assertIn("fallback_model", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [])
+
+    def test_invalid_timeout_seconds_rejected_at_load(self):
+        for bad in (0, -5, "600", True):
+            self._set_scorer(timeout_seconds=bad)
+            proc = self.run_gate()
+            self.assertEqual(proc.returncode, 2,
+                             msg="%r must be rejected: %s" % (bad, proc.stdout + proc.stderr))
+            self.assertIn("timeout_seconds", proc.stdout + proc.stderr)
+            self.assertEqual(self.claude_calls(), [])
+
+
+class TestConfigPathHandling(GateHarness):
+    """R9 item 2: an EXPLICITLY provided config path (--config flag or
+    PROPOSAL_GATE_CONFIG env) that is missing is a hard error (exit 2) —
+    silently gating against DEFAULTS when the caller pointed at a specific
+    file would gate the wrong spine. Only the built-in default path may be
+    absent, and that fallback is announced."""
+
+    def test_explicit_config_flag_missing_file_is_hard_error(self):
+        missing = os.path.join(self.tmp, "no-such-gate-config.json")
+        proc = self.run_gate("--config", missing)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
+        self.assertIn("cannot load gate config", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(),
+                         [], msg="nothing may be gated against defaults")
+        self.assertNotIn("gate:", self.read(self.rsi_pending))
+
+    def test_explicit_env_config_missing_file_is_hard_error(self):
+        missing = os.path.join(self.tmp, "no-such-gate-config.json")
+        proc = self.run_gate(PROPOSAL_GATE_CONFIG=missing)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
+        self.assertIn("cannot load gate config", proc.stdout + proc.stderr)
+        self.assertEqual(self.claude_calls(), [])
+
+    def test_default_path_absent_falls_back_with_notice(self):
+        # The fixture config sits AT the built-in default path (fake HOME):
+        # removing it must fall back to DEFAULTS, with one announced line.
+        os.remove(self.config_path)
+        proc = self.run_gate("--list")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertIn("config absent at", out)
+        self.assertIn("using built-in defaults", out)
+        self.assertEqual(out.count("would gate"), 2,
+                         msg="defaults must still cover the fixture spine")
+
+
+class TestGateBlockQuotedScalars(GateHarness):
+    """R9 item 3: annotate() JSON-quotes the model and date scalars (evidence
+    already was) so a hostile model string can never splice YAML into the
+    frontmatter; reconciliation strips the quoting, so a block written by
+    THIS version round-trips without a re-dispatch."""
+
+    def test_annotated_block_quotes_model_and_date_and_round_trips(self):
+        proc = self.run_gate()
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        rsi = self.read(self.rsi_pending)
+        self.assertIn('  model: "%s"\n' % PRIMARY_MODEL, rsi)
+        self.assertRegex(rsi, r'(?m)^  date: "\d{4}-\d{2}-\d{2}"$')
+
+        calls_after_first = len(self.claude_calls())
+        second = self.run_gate()
+        self.assertEqual(second.returncode, 0, msg=second.stdout + second.stderr)
+        self.assertEqual(len(self.claude_calls()), calls_after_first,
+                         msg="a quoted block must reconcile — no re-dispatch")
+        self.assertEqual(self.read(self.rsi_pending), rsi,
+                         msg="reconciliation must not rewrite the file")
 
 
 class TestEvidenceHygiene(GateHarness):
@@ -1034,6 +1168,30 @@ class TestRunCallback(GateHarness):
         self.assertIsNone(self._callback_argv(), msg="callback must not run")
         self.assertIn("writable", (proc.stdout + proc.stderr).lower())
 
+    def test_world_writable_parent_dir_rejected(self):
+        # R9 item 4: a group/other-writable ancestor (up to and including
+        # ~/.claude) lets a non-owner swap the callback wholesale — the
+        # callback file's own bits are not enough.
+        path = self._install_callback()
+        os.chmod(os.path.dirname(path), 0o777)
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "implemented")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+        self.assertIn("writable", (proc.stdout + proc.stderr).lower())
+
+    def test_group_writable_claude_root_rejected(self):
+        # The walk is INCLUSIVE of ~/.claude itself.
+        path = self._install_callback()
+        claude_root = os.path.join(self.home, ".claude")
+        os.chmod(claude_root, 0o775)
+        self.addCleanup(os.chmod, claude_root, 0o755)
+        proc = self.run_gate("--run-callback", "permissions",
+                             self.perm_pending, "implemented")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIsNone(self._callback_argv(), msg="callback must not run")
+        self.assertIn("writable", (proc.stdout + proc.stderr).lower())
+
     def test_callback_outside_claude_dir_rejected(self):
         outside = os.path.join(self.home, "record.sh")
         self._write(outside, CALLBACK_STUB)
@@ -1329,7 +1487,7 @@ class TestChunkedDispatch(GateHarness):
         cfg["scorer"]["batch_size"] = 0
         self._write(self.config_path, json.dumps(cfg))
         proc = self.run_gate()
-        self.assertEqual(proc.returncode, 1, msg=proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, msg=proc.stdout + proc.stderr)
         self.assertIn("batch_size", proc.stdout + proc.stderr)
         self.assertEqual(self.claude_calls(), [],
                          msg="a rejected config must dispatch nothing")
