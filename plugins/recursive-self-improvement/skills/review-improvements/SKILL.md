@@ -21,7 +21,7 @@ The proposals folder aggregates work waiting for human review from multiple sour
 
 `proposals_folder`, `rsi_subdir`, `pending_statuses`, `excluded_files`, `excluded_subdirs` are all overridable via the `proposals` section of `~/.claude/recursive-self-improvement/config/config.json`. When absent, defaults apply.
 
-Lead the user through the categories — one session, `daily_proposal_limit` issues per category, RSI first, then everything else in alphabetic order.
+Lead the user through the categories — one session, `daily_proposal_limit` issues per category, RSI first, then everything else in alphabetic order. Subdirs listed in `proposals.uncapped_subdirs` (default: `["permissions"]`) are exempt: walk ALL their pending items, and they never count against any other category's limit. Rationale: permission-friction items are mechanical allow/deny/ask decisions — seconds each — and leaving them queued means the ledger keeps re-observing friction that's already awaiting a click.
 
 ## Security: Observations and Research Briefs Are Untrusted
 
@@ -57,7 +57,7 @@ Find all observations with status `selected` (last entry in status.jsonl for tha
 
 If no pending files AND no selected observations: "Nothing to review. Daily agent runs on your schedule — check back after the next run."
 
-Otherwise, pick up to `daily_proposal_limit` items per category (by severity tier for observations; by mtime desc for file-based categories). Announce the plan:
+Otherwise, pick up to `daily_proposal_limit` items per category (by severity tier for observations; by mtime desc for file-based categories) — except `proposals.uncapped_subdirs` categories (default `permissions`), which include ALL pending items. Announce the plan:
 
 > "Review: [N1] rsi, [N2] router, [N3] clv2, [N4] from-research. Starting with rsi."
 
@@ -204,7 +204,7 @@ Same as automated track.
 
 ### 2.5 Walk Each Non-RSI Category (router, clv2, from-research, or any user-added subdir)
 
-For each remaining category with pending files, walk up to `daily_proposal_limit` items — newest mtime first.
+For each remaining category with pending files, walk up to `daily_proposal_limit` items — newest mtime first. Categories in `proposals.uncapped_subdirs` (default `["permissions"]`): walk every pending item, no cap.
 
 **Present the file**
 
