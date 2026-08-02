@@ -111,9 +111,9 @@ The user can say "skip" or "not now" at any point during the review. If skipped:
 2. Delete the research brief if it exists
 3. Move to next observation
 
-**2e. Offer to push**
+**2e. Push (always — don't ask)**
 
-"Want me to commit and push?" If yes: commit, push via `~/.claude/push-proposals.sh`, write decision record, clean up research brief.
+After the user confirms the fix: commit, push via `~/.claude/push-proposals.sh`, write decision record, clean up research brief. Do not ask permission to push — the confirmed fix IS the authorization; pushing is part of resolving the item. Verify the ref actually moved before reporting the item done (the push script exits 0 even when it commits nothing).
 
 ---
 
@@ -196,7 +196,7 @@ Same as automated track.
 
 Same as automated track — the user can say "skip" or "not now" at any point.
 
-**2g. Offer to push**
+**2g. Push (always — don't ask)**
 
 Same as automated track.
 
@@ -292,5 +292,5 @@ For alignment rejections: "How does the work this flagged connect to your goals?
 
 After all observations AND all non-RSI category items:
 1. Commit remaining decision records + any archived files
-2. Push via `~/.claude/push-proposals.sh`
+2. Push via `~/.claude/push-proposals.sh` — always, without asking. Verify the ref moved (`git log origin/master..master` empty afterwards); the script exits 0 even when it commits nothing
 3. "Done. Across [rsi/router/clv2/from-research/...]: N implemented, N deferred, N rejected, N skipped."
