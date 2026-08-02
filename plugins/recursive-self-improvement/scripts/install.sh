@@ -13,6 +13,19 @@ if [[ "${4:-}" == "--detect-secrets" ]]; then
   INSTALL_PRECOMMIT_HOOK=true
 fi
 
+# HOUR/MINUTE end up inside cron lines and bash arithmetic — validate before
+# composing anything (and before any install side effect).
+if ! [[ "$HOUR" =~ ^[0-9]+$ ]] || (( 10#$HOUR > 23 )); then
+  echo "error: HOUR must be a decimal integer 0-23 (got: $HOUR)" >&2
+  exit 1
+fi
+if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || (( 10#$MINUTE > 59 )); then
+  echo "error: MINUTE must be a decimal integer 0-59 (got: $MINUTE)" >&2
+  exit 1
+fi
+HOUR=$((10#$HOUR))
+MINUTE=$((10#$MINUTE))
+
 TARGET=~/.claude
 
 echo "Creating directory structure..."
@@ -45,8 +58,19 @@ done
 # Gitignore local-only directories
 GITIGNORE="$TARGET/recursive-self-improvement/.gitignore"
 for entry in "observations/" "research/"; do
-  if [[ ! -f "$GITIGNORE" ]] || ! grep -q "$entry" "$GITIGNORE" 2>/dev/null; then
+  if [[ ! -f "$GITIGNORE" ]] || ! grep -qxF "$entry" "$GITIGNORE" 2>/dev/null; then
     echo "$entry" >> "$GITIGNORE"
+  fi
+done
+
+# Keep gate runtime state out of the pushed proposals subtree: gate-log.jsonl
+# is per-host forensics, and .gate.lock is the retired pre-2026-08 lock
+# location (the lock now lives at ~/.claude/logs/gate.lock). push-proposals.sh
+# also excludes both via pathspec — this gitignore is the second belt.
+SPINE_GITIGNORE="$TARGET/proposals/.gitignore"
+for entry in "gate-log.jsonl" ".gate.lock"; do
+  if [[ ! -f "$SPINE_GITIGNORE" ]] || ! grep -qxF "$entry" "$SPINE_GITIGNORE" 2>/dev/null; then
+    echo "$entry" >> "$SPINE_GITIGNORE"
   fi
 done
 
@@ -69,17 +93,43 @@ echo "Installing push script..."
 cp "$PLUGIN_ROOT/scripts/push-proposals.sh" "$TARGET/push-proposals.sh"
 chmod +x "$TARGET/push-proposals.sh"
 
+echo "Installing proposal intake gate..."
+# Independent scorer harness: annotates pending proposals with grep-cited
+# sharp|duplicate|rot verdicts before push-proposals.sh ships them for review.
+mkdir -p "$TARGET/scripts"
+cp "$PLUGIN_ROOT/scripts/proposal-intake-gate.py" "$TARGET/scripts/proposal-intake-gate.py"
+chmod +x "$TARGET/scripts/proposal-intake-gate.py"
+# Seed the gate config once; never clobber a user-edited one (it carries
+# host-local on_decision callback registrations).
+if [[ ! -f "$TARGET/proposals/gate-config.json" ]]; then
+  cp "$PLUGIN_ROOT/references/gate-config.default.json" "$TARGET/proposals/gate-config.json"
+fi
+
+# NOTE (NixOS, 2026-08-01): `crontab` edits are NOT durable on NixOS hosts —
+# the user crontab is rebuilt from the declarative config, so lines installed
+# here are silently wiped on the next rebuild. On NixOS the schedules below
+# belong in the host's declarative crontab (precedent: nixos-config PR #155);
+# the file payloads installed above are still what those declarative entries
+# invoke. This installer keeps using `crontab` for conventional hosts.
 echo "Removing old monthly review cron if present..."
-(crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-monthly") | crontab -
+# `grep -v` exits 1 on empty input (fresh host, empty crontab) — with
+# pipefail that killed the installer, so every filter tolerates no-match.
+(crontab -l 2>/dev/null | { grep -v "# recursive-self-improvement-monthly" || true; }) | crontab -
 
 echo "Installing daily analysis cron job (${HOUR}:${MINUTE})..."
-(crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-analysis" ; echo "${MINUTE} ${HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/recursive-self-improvement/observations/*) Glob Grep Bash(du -sm ~/.claude/recursive-self-improvement/observations/observations.jsonl)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/prompt.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # recursive-self-improvement-analysis") | crontab -
+(crontab -l 2>/dev/null | { grep -v "# recursive-self-improvement-analysis" || true; } ; echo "${MINUTE} ${HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Write(~/.claude/recursive-self-improvement/observations/*) Glob Grep Bash(du -sm ~/.claude/recursive-self-improvement/observations/observations.jsonl)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/prompt.md)\" >> ~/.claude/logs/review-agent.log 2>&1 # recursive-self-improvement-analysis") | crontab -
 
 RESEARCH_MINUTE=$(( (MINUTE + 30) % 60 ))
 RESEARCH_HOUR=$(( (HOUR + (MINUTE + 30) / 60) % 24 ))
 
+# Grant note (2026-08-01): this line used to grant WebSearch/WebFetch. Both
+# are globally denied in ~/.claude/settings.json, and a global deny beats ANY
+# --allowedTools grant — headless included (probed 2026-08-01 on this host's
+# Claude Code build). The job's web capability was therefore silently dead on
+# every run. External lookups now go through the research-agent MCP tool,
+# which is grantable and not deny-listed.
 echo "Installing auto-research cron job (${RESEARCH_HOUR}:${RESEARCH_MINUTE})..."
-(crontab -l 2>/dev/null | grep -v "# recursive-self-improvement-research" ; echo "${RESEARCH_MINUTE} ${RESEARCH_HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Glob Grep WebSearch WebFetch Write(~/.claude/recursive-self-improvement/research/*) Bash(python3 ~/.claude/recursive-self-improvement/scripts/scan_content.py*)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/auto-research.md)\" >> ~/.claude/logs/research-agent.log 2>&1 # recursive-self-improvement-research") | crontab -
+(crontab -l 2>/dev/null | { grep -v "# recursive-self-improvement-research" || true; } ; echo "${RESEARCH_MINUTE} ${RESEARCH_HOUR} * * * cd ~/.claude && claude --model opus --print --allowedTools \"Read Glob Grep mcp__research-agent__research Write(~/.claude/recursive-self-improvement/research/*) Bash(python3 ~/.claude/recursive-self-improvement/scripts/scan_content.py*)\" -p \"\$(cat ~/.claude/recursive-self-improvement/config/auto-research.md)\" >> ~/.claude/logs/research-agent.log 2>&1 # recursive-self-improvement-research") | crontab -
 
 if [[ "$INSTALL_PRECOMMIT_HOOK" == "true" ]]; then
   echo "Installing pre-commit hook for secret detection..."
@@ -90,6 +140,24 @@ echo "Cleaning up..."
 rm -f "$TARGET/tmp/recursive-self-improvement-setup.yml"
 
 echo "Committing configuration..."
-cd "$TARGET" && git add recursive-self-improvement/ push-proposals.sh && git commit -m "chore: configure recursive self-improvement"
+# Stage and commit ONLY the paths this installer wrote — never a broad
+# `git add`, and always commit with explicit pathspecs so a user's unrelated
+# pre-staged work is neither swept into this commit nor unstaged.
+INSTALLED_PATHS=(
+  recursive-self-improvement/.gitignore
+  proposals/.gitignore
+  recursive-self-improvement/config/policy.md
+  recursive-self-improvement/config/categories.md
+  recursive-self-improvement/config/prompt.md
+  recursive-self-improvement/config/auto-research.md
+  recursive-self-improvement/scripts/scan_content.py
+  push-proposals.sh
+  scripts/proposal-intake-gate.py
+  proposals/gate-config.json
+)
+cd "$TARGET"
+git add -- "${INSTALLED_PATHS[@]}"
+git diff --cached --quiet -- "${INSTALLED_PATHS[@]}" || \
+  git commit -m "chore: configure recursive self-improvement" -- "${INSTALLED_PATHS[@]}"
 
 echo "Done."

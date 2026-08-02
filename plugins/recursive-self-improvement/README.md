@@ -7,7 +7,8 @@ A Claude Code plugin that reviews your daily chat logs and writes improvement pr
 1. **Daily cron agent** (Opus) reads the last day's chat logs and your current Claude configuration
 2. Writes improvement proposals to `~/.claude/recursive-self-improvement/proposals/` — problem descriptions with fix options, no log excerpts
 3. **SessionStart hook** nudges you when pending proposals exist
-4. **`/review-improvements`** walks you through proposals — accept triggers immediate implementation, testing, and commit/push
+4. **Proposal intake gate** (`~/.claude/scripts/proposal-intake-gate.py`, run by `push-proposals.sh` before every push) dispatches read-only scorers in chunks of at most `scorer.batch_size` proposals (default 10 — a backlog never lands on the model as one prompt, and a failed chunk defers only that chunk) that must grep the config and referenced repos before ruling each proposal `sharp`, `duplicate`, or `rot` — the verdict and its cited evidence are annotated into the proposal's frontmatter; nothing is auto-rejected. Coverage matches what the push ships: every allowlisted `.md` in a spine subdir is gated, including files with no frontmatter or no `status:` field (other producers' formats); only an explicit non-pending status or a reconciled gate block opts a file out. Config: `~/.claude/proposals/gate-config.json` (versioned — it is user config); audit trail: `~/.claude/proposals/gate-log.jsonl` (local-only forensics — gitignored and excluded from `push-proposals.sh`'s pathspec, so it never lands in the pushed history). Rationale: proposers score their own homework badly — an ungated 2026-08-01 run proposed two fixes that were already shipped.
+5. **`/review-improvements`** walks you through proposals (gate verdicts surfaced inline) — accept triggers immediate implementation, testing, and commit/push. Decisions can trigger per-subdir `on_decision` callbacks declared in gate-config.json.
 
 ## Categories
 
@@ -43,6 +44,8 @@ Run `/setup-recursive-self-improvement` in any Claude session. The wizard:
 
 Configuration is saved to `~/.claude/recursive-self-improvement/config/config.json`. The analysis prompt is at `config/prompt.md` — edit it to customize behavior.
 
+**NixOS:** `crontab` edits are not durable there — the user crontab is rebuilt from the declarative config, so the wizard's cron lines get wiped on the next rebuild. Put the schedules in the host's declarative crontab instead (nixos-config PR #155 has the reference pattern); the installed file payloads are what those entries invoke.
+
 ## Directory structure
 
 ```
@@ -60,10 +63,14 @@ Configuration is saved to `~/.claude/recursive-self-improvement/config/config.js
 - Cron agent has **read-only** access to logs, config, skills, and proposals
 - **Write access** scoped to `~/.claude/recursive-self-improvement/proposals/*` only
 - **No direct git** — a hardcoded `push-proposals.sh` script handles git operations
-- **No WebFetch** — only `WebSearch` for plugin discovery
+- **No WebFetch/WebSearch** — both are globally denied on this setup, and a global deny beats any `--allowedTools` grant (verified 2026-08-01), so the research cron routes external lookups through the sandboxed `mcp__research-agent__research` MCP tool instead
+- **Intake gate scorer is read-only** — `Read Grep Glob` only; the trusted gate script does all writing
+- **Push is gate-mandatory** — `push-proposals.sh` hard-fails (exit 1) when the gate script is missing instead of pushing ungated proposals; reinstall via the plugin's `scripts/install.sh`. Emergency bypass for a broken install: `PROPOSAL_GATE_ALLOW_MISSING=1 ~/.claude/push-proposals.sh` — use it knowingly and reinstall the gate afterwards. A *partial* batch (gate exit 4) is never bypassable: rerun the gate.
 - Proposals contain **no log excerpts** — only links to log files
 - Proposals treated as **untrusted content** in the review skill (defense against prompt injection from logs)
 - **`detect-secrets`** pre-commit hook blocks secrets from being committed anywhere
+
+If the gate repeatedly exits 4 on the *same* file, the scorer never returns a verdict for it — a permanently unscorable proposal. The operator remedy is to rename the file with a leading dot (the gate's default `excluded_files` covers dotfiles) or move it to the `archived/` subdir; either takes it out of every future batch. Do not bypass the gate.
 
 ## Commands
 
