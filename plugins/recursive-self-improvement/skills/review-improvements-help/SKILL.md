@@ -15,12 +15,13 @@ A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours.
 - **Automation** — repetitive cleanup work you do that a script or cron job could handle.
 - **Alignment** — drift from your stated goals and north star. Detects when daily work doesn't connect to what you say matters.
 - **Wellbeing** — based on your configured off-track patterns. Detects manic sessions, zombie mode, rabbit holes, and compulsive loops.
+- **Verification** — work claimed complete without evidence. Detects tests not run, output not observed, and "should work" shipped.
 
 ## How Proposals Work
 
 - Stored in `~/.claude/recursive-self-improvement/proposals/` as markdown files
 - Contain problem descriptions and 1-3 proposed fixes — no log excerpts for security
-- Tagged with category (productivity/automation/alignment/wellbeing) and linked to source log files
+- Tagged with category (productivity/automation/alignment/wellbeing/verification) and linked to source log files
 - Status lifecycle: pending → accepted/rejected/deferred → implemented
 
 ## Commands

@@ -43,7 +43,7 @@ Ask these questions **one at a time**. Wait for the user's response before askin
 
 Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category descriptions. Present a summary to the user:
 
-> "The plugin can help you with four areas:
+> "The plugin can help you with five areas:
 >
 > 1. **Productivity** — Making Claude better at acting without you there holding its hand. Proposes config changes so Claude handles things autonomously next time.
 >
@@ -52,6 +52,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/categories.md` for the full category desc
 > 3. **Alignment** — Are you working on your goals, or drifting? Reviews your daily work against your stated north star. You get proposals, not orders.
 >
 > 4. **Wellbeing** — Spots patterns that disrupt your wellbeing. Anti-mania, anti-burnout, healthy rhythms.
+>
+> 5. **Verification** — Flags work claimed complete without evidence: tests not run, output not observed, 'should work' shipped.
 >
 > Which categories do you want? (e.g. 'all', '1 and 3', 'productivity and automation')"
 
@@ -95,7 +97,8 @@ Write `~/.claude/recursive-self-improvement/config/config.json` (the install scr
     "productivity": true/false,
     "automation": true/false,
     "alignment": true/false,
-    "wellbeing": true/false
+    "wellbeing": true/false,
+    "verification": true/false
   },
   "daily_proposal_limit": 3,
   "max_ledger_size_mb": 200,
