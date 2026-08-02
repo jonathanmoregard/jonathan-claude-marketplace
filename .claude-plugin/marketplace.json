@@ -25,6 +25,15 @@
         "name": "Jonathan Moregard"
       },
       "source": "./plugins/corrections-loop"
+    },
+    {
+      "name": "question-guard",
+      "version": "0.1.0",
+      "description": "Deterministic UserPromptSubmit hook that detects closed questions and injects a one-line nudge to answer directly instead of taking action. Stateless, regex-only, never blocks a session.",
+      "author": {
+        "name": "Jonathan Moregard"
+      },
+      "source": "./plugins/question-guard"
     }
   ]
 }

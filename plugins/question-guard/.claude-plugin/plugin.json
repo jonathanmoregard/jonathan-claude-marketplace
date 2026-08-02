@@ -1,0 +1,8 @@
+{
+  "name": "question-guard",
+  "description": "Deterministic UserPromptSubmit hook that detects closed questions (\"did you push?\", \"is this merged?\") and injects a one-line nudge to answer directly instead of taking action. Stateless, regex-only, never blocks a session.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jonathan Moregard"
+  }
+}
