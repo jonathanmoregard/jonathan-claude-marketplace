@@ -1,0 +1,8 @@
+{
+  "name": "corrections-loop",
+  "description": "Deterministic UserPromptSubmit hook that captures correction-shaped user messages (\"no, not that\", \"stop doing X\", \"wrong file\") into a local JSONL ledger for nightly triage. Regex-only, no LLM in the hot path, never blocks a session.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jonathan Moregard"
+  }
+}
