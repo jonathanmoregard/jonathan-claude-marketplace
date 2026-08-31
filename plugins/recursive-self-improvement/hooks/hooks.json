@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pending-proposals-nudge.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
