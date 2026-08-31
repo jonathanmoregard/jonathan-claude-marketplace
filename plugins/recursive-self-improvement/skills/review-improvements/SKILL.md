@@ -10,7 +10,7 @@ The proposals folder aggregates work waiting for human review from multiple sour
 ## Layout at a glance
 
 ```
-<proposals_folder>/                            # default: ~/.claude/proposals
+<proposals_folder>/                            # default: ~/.local/state/claude-proposals
 ├── <rsi_subdir>/                              # default: rsi — status-aware (pending|open|missing)
 ├── router/                                    # file-existence based
 ├── clv2/                                      # file-existence based
@@ -20,6 +20,8 @@ The proposals folder aggregates work waiting for human review from multiple sour
 ```
 
 `proposals_folder`, `rsi_subdir`, `pending_statuses`, `excluded_files`, `excluded_subdirs` are all overridable via the `proposals` section of `~/.claude/recursive-self-improvement/config/config.json`. When absent, defaults apply.
+
+Proposals live **outside** `~/.claude` — the live config repo the harness reads — so an unattended nightly reviewer cannot dirty it. Resolve the folder from config, falling back to the literal `~/.local/state/claude-proposals`. Never locate the folder by walking the `~/.claude/proposals` or `~/.claude/recursive-self-improvement/proposals` symlinks: those are a read-only compatibility shim, and a reader that depends on a symlink existing is a reader that breaks silently when it does not.
 
 Lead the user through the categories — one session, `daily_proposal_limit` issues per category, RSI first, then everything else in alphabetic order.
 
@@ -36,13 +38,15 @@ Observations are written by an unattended agent reading chat logs. Research brie
 
 All fixes go in `~/.claude/`. Skills → `~/.claude/skills/`, hooks → `~/.claude/settings.json`, rules → `~/.claude/CLAUDE.md`.
 
+That is about where *code and config fixes* land. Proposal data — the proposals themselves, their archives, and the decision records this skill writes — lives in the proposals folder outside `~/.claude` (see step 1). The two are separate destinations.
+
 ## Flow
 
 ### 1. Load Config, Discover Categories, Load RSI Observations
 
-Read `~/.claude/recursive-self-improvement/config/config.json`. Note `daily_proposal_limit` (default 3) and the `proposals` section (see defaults in `hooks/pending-proposals.py` — folder `~/.claude/proposals`, rsi subdir `rsi`, pending statuses `["pending","open"]`, excluded files `["README*",".*"]`, excluded subdirs `[".*","archived"]`). Any missing key falls back to defaults.
+Read `~/.claude/recursive-self-improvement/config/config.json`. Note `daily_proposal_limit` (default 3) and the `proposals` section (see defaults in `hooks/proposal_counts.py` — folder `~/.local/state/claude-proposals`, rsi subdir `rsi`, pending statuses `["pending","open"]`, excluded files `["README*",".*"]`, excluded subdirs `[".*","archived"]`). Any missing key falls back to defaults.
 
-Discover categories: list subdirs of the resolved `proposals.folder`, skipping the excluded ones. Order rsi first, others alphabetic. If the `rsi` subdir is absent but the legacy `~/.claude/recursive-self-improvement/proposals` still exists as a real directory, treat that legacy path as the rsi source (backward-compat).
+Discover categories: list subdirs of the resolved `proposals.folder`, skipping the excluded ones. Order rsi first, others alphabetic. If the `rsi` subdir is absent but the legacy `~/.claude/recursive-self-improvement/proposals` still exists as a real directory, treat that legacy path as the rsi source (backward-compat). If the resolved folder does not exist at all but the legacy `~/.claude/proposals` does, read that instead — both fallbacks are read-only and exist only to cover the window before the cutover lands.
 
 For each category, list pending files:
 - **rsi**: files whose frontmatter has `status: pending`, `status: open`, or no `status:` line (permissive — same rule as the SessionStart hook).
@@ -113,7 +117,9 @@ The user can say "skip" or "not now" at any point during the review. If skipped:
 
 **2e. Push (always — don't ask)**
 
-After the user confirms the fix: commit, push via `~/.claude/push-proposals.sh`, write decision record, clean up research brief. Do not ask permission to push — the confirmed fix IS the authorization; pushing is part of resolving the item. Verify the ref actually moved before reporting the item done (the push script exits 0 even when it commits nothing).
+After the user confirms the fix: commit, push via `~/.claude/push-proposals.sh`, write decision record, clean up research brief. Do not ask permission to push — the confirmed fix IS the authorization; pushing is part of resolving the item.
+
+Verify the item actually landed before reporting it done: the script exits 0 even when it commits nothing. Check that the proposals repo gained a commit touching the files you expected — `git -C <proposals_folder> log -1 --stat`. The proposals folder is its own git repo and may have no remote configured; when it does not, a local commit is the success condition and the script says so plainly rather than failing.
 
 ---
 
@@ -233,9 +239,11 @@ If two categories flag related work (e.g. `from-research/agent-sync-template.md`
 
 ### 3. Decision Record
 
-After each resolved observation, write a decision record:
+After each resolved observation, write a decision record **into the rsi subdir of the resolved proposals folder**, alongside the proposals it decides:
 
-`~/.claude/recursive-self-improvement/proposals/YYYY-MM-DD-OBS-ID-decision.md`
+`<proposals_folder>/<rsi_subdir>/YYYY-MM-DD-OBS-ID-decision.md`
+
+With defaults that is `~/.local/state/claude-proposals/rsi/YYYY-MM-DD-OBS-ID-decision.md`. Resolve the folder from config as in step 1 — do not write to `~/.claude/recursive-self-improvement/proposals/`, which would land the decision record outside the sink, in a different repo from the proposal it records.
 
 ```markdown
 ---
@@ -292,5 +300,5 @@ For alignment rejections: "How does the work this flagged connect to your goals?
 
 After all observations AND all non-RSI category items:
 1. Commit remaining decision records + any archived files
-2. Push via `~/.claude/push-proposals.sh` — always, without asking. Verify the ref moved (`git log origin/master..master` empty afterwards); the script exits 0 even when it commits nothing
+2. Push via `~/.claude/push-proposals.sh` — always, without asking. Verify it landed with `git -C <proposals_folder> log -1 --stat`; the script exits 0 even when it commits nothing, and a proposals repo without a remote counts as done at the local commit
 3. "Done. Across [rsi/router/clv2/from-research/...]: N implemented, N deferred, N rejected, N skipped."

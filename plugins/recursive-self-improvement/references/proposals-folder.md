@@ -1,11 +1,13 @@
 # Unified Proposals Folder
 
-The plugin's SessionStart hook (`hooks/pending-proposals.py`) and `/review-improvements` skill both look at a single aggregation folder for pending work across multiple sources.
+The plugin's SessionStart banner (`hooks/pending-proposals.py`), its UserPromptSubmit nudge (`hooks/pending-proposals-nudge.py`), and the `/review-improvements` skill all look at a single aggregation folder for pending work across multiple sources. All three count through one shared module, `hooks/proposal_counts.py`, so the number can never differ between surfaces.
 
 ## Default layout
 
+The folder lives **outside** `~/.claude`. That directory is the live config repo the harness reads, and an unattended nightly reviewer writing proposals into it leaves it permanently dirty.
+
 ```
-~/.claude/proposals/                          # config.proposals.folder
+~/.local/state/claude-proposals/              # config.proposals.folder
 ├── rsi/                                      # config.proposals.rsi_subdir  (status-aware)
 ├── router/                                   # any subdir  (file-existence based)
 ├── clv2/
@@ -23,7 +25,7 @@ Add a `proposals` section to `~/.claude/recursive-self-improvement/config/config
 ```json
 {
   "proposals": {
-    "folder": "~/.claude/proposals",
+    "folder": "~/.local/state/claude-proposals",
     "rsi_subdir": "rsi",
     "pending_statuses": ["pending", "open"],
     "excluded_files": ["README*", ".*"],
@@ -34,7 +36,7 @@ Add a `proposals` section to `~/.claude/recursive-self-improvement/config/config
 
 | Key | Default | Meaning |
 |---|---|---|
-| `folder` | `~/.claude/proposals` | Aggregation root. `~` is expanded. |
+| `folder` | `~/.local/state/claude-proposals` | Aggregation root. `~` is expanded. Resolve it from config, falling back to this literal — never by walking the `~/.claude` compatibility symlinks. |
 | `rsi_subdir` | `rsi` | Name of the subdir treated as status-aware (frontmatter-based). |
 | `pending_statuses` | `["pending", "open"]` | For the rsi subdir, frontmatter status values counted as pending. Files with no `status:` line are also counted (permissive). |
 | `excluded_files` | `["README*", ".*"]` | fnmatch globs — filenames matching any of these are skipped in every subdir. |
@@ -53,32 +55,29 @@ Add a `proposals` section to `~/.claude/recursive-self-improvement/config/config
 
 ## Backward compatibility
 
-If the new folder / rsi subdir doesn't exist yet AND the legacy dir `~/.claude/recursive-self-improvement/proposals/` exists as a real directory, the hook counts the legacy dir as the rsi bucket. Pre-migration installs keep working.
+Two read-only fallbacks, both live only until a pre-relocation install cuts over:
+
+1. If the rsi subdir is absent from the resolved folder AND the legacy dir `~/.claude/recursive-self-improvement/proposals/` exists as a real directory, that dir is counted as the rsi bucket.
+2. If the resolved folder does not exist at all AND `~/.claude/proposals/` does, the legacy folder is counted instead.
+
+Neither is a path any *writer* may rely on. Writers resolve from config and write to the real location; the `~/.claude` names survive as a compatibility shim for readers only.
 
 ## How to add a new source
 
-1. `mkdir ~/.claude/proposals/<new-source>`
+1. `mkdir ~/.local/state/claude-proposals/<new-source>`
 2. Writer (script, MCP server, subagent, whatever) drops `*.md` files there.
 3. Next SessionStart shows `<new-source> N` in the nudge.
 4. `/review-improvements` walks it after rsi and before/after other categories alphabetically.
 
 No plugin edit. No config change (unless the new source needs a non-default filename pattern excluded).
 
-## Migration from legacy layout
+## Migration from the legacy `~/.claude` layout
 
-Two options:
+Superseded. Both proposal roots used to live inside `~/.claude`, wired to each other by a `proposals/rsi` symlink, which meant every nightly reviewer run left the live config repo dirty. They now live in the state sink, and the two old names survive only as absolute symlinks pointing into it:
 
-**A. Symlink (default, zero-copy)** — the install script does this on fresh installs:
 ```
-ln -sfn ~/.claude/recursive-self-improvement/proposals ~/.claude/proposals/rsi
+~/.claude/proposals                            -> ~/.local/state/claude-proposals
+~/.claude/recursive-self-improvement/proposals -> ~/.local/state/claude-proposals/rsi
 ```
-Both paths point at the same files. Daily-review prompt keeps writing to the legacy path; hook and skill see them via the symlink.
 
-**B. Move + reverse symlink** — one-time cutover if you want rsi files under `~/.claude/proposals/` for real:
-```
-mkdir -p ~/.claude/proposals/rsi
-mv ~/.claude/recursive-self-improvement/proposals/*.md ~/.claude/proposals/rsi/
-rmdir ~/.claude/recursive-self-improvement/proposals
-ln -sfn ~/.claude/proposals/rsi ~/.claude/recursive-self-improvement/proposals
-```
-Reverses the symlink direction so the daily prompt still writes to `~/.claude/recursive-self-improvement/proposals/` (now a symlink into the aggregation folder).
+Those symlinks are for readers that still use the old names. Nothing should resolve the sink *through* them, and no writer should depend on them existing. Set `proposals.folder` in `config.json` and write to the resolved path.

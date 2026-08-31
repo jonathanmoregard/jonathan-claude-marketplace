@@ -1,7 +1,7 @@
 {
   "name": "recursive-self-improvement",
   "description": "Daily Opus-powered review of chat logs that identifies behavior patterns (north star violations, wellbeing drift, automatable meta-work) and writes actionable improvement proposals.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Jonathan Moregard"
   }
