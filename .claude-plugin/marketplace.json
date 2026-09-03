@@ -25,6 +25,12 @@
         "name": "Jonathan Moregard"
       },
       "source": "./plugins/corrections-loop"
+    },
+    {
+      "name": "superpowers",
+      "description": "Forked from obra/superpowers. Teaches Claude brainstorming, subagent driven development with built in code review, systematic debugging, and red/green TDD. Additionally, teaches Claude how to author and test new skills.",
+      "category": "development",
+      "source": "./plugins/superpowers"
     }
   ]
 }

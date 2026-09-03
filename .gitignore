@@ -1,2 +1,17 @@
 .worktrees/
 __pycache__/
+
+# The superpowers entry in .claude-plugin/marketplace.json is sourced from
+# ./plugins/superpowers, which is supplied per-checkout rather than vendored
+# here: point it at a local clone of the fork (a symlink is fine) and Claude
+# Code will dereference it at install time.
+#
+# Deliberately untracked. Vendoring it would either duplicate an upstream
+# repo or bake a checkout-specific path into this public repo, and either way
+# every clone that overlays its own copy stops fast-forwarding. Ignoring the
+# path lets a clone carry its own wiring and still `git pull --ff-only`
+# forever.
+#
+# No trailing slash: the path is usually a symlink, which git records as a
+# blob, and a `dir/` pattern would not match it.
+/plugins/superpowers
