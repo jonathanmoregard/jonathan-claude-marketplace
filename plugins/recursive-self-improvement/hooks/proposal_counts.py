@@ -130,6 +130,7 @@ def _iter_md_files(dir_path, excluded_files):
 
 
 _FM_CLOSE_RE = re.compile(r"^---[ \t]*$", re.MULTILINE)
+_STATUS_LINE_RE = re.compile(r"^status:\s*", re.MULTILINE)
 
 
 def read_frontmatter(fpath, limit=2048):
@@ -147,7 +148,24 @@ def read_frontmatter(fpath, limit=2048):
     if nl == -1:
         return None
     m = _FM_CLOSE_RE.search(content, nl + 1)
-    return content[nl + 1:m.start()] if m else None
+    if not m:
+        return None
+    frontmatter = content[nl + 1:m.start()]
+    if not _STATUS_LINE_RE.search(frontmatter):
+        # The intake gate prepends its own block to a file that does not start
+        # with `---` (e.g. one wrapped in a code fence); the real frontmatter
+        # then follows, after blank or fence lines. Read it as one block.
+        pos = m.end()
+        lines = content[pos:].split("\n")
+        i = 1  # lines[0] is the remainder of the closing `---` line
+        while i < len(lines) and (not lines[i].strip() or lines[i].startswith("```")):
+            i += 1
+        if i < len(lines) and lines[i].rstrip() == "---":
+            start = pos + sum(len(x) + 1 for x in lines[:i + 1])
+            m2 = _FM_CLOSE_RE.search(content, start)
+            if m2:
+                frontmatter += content[start:m2.start()]
+    return frontmatter
 
 
 def pending_status_aware(dir_path, pending_statuses, excluded_files):

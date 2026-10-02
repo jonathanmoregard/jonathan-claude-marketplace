@@ -225,6 +225,17 @@ class TestMalformedFrontmatter(HomeHarness):
         body = b"---\nstatus: pending\ntitle: caf\xe9\n---\n"
         self.assertEqual(self.rsi_count({"latin1.md": body}), 1)
 
+    def test_gate_block_prepended_ahead_of_a_fenced_frontmatter(self):
+        """Real shape (2026-09-13 proposals): the intake gate prepended its own
+        frontmatter to a file that began with a code fence, so the real status
+        sits in a second block."""
+        split = ('---\ngate:\n  verdict: sharp\n  evidence: "x"\n---\n```\n'
+                 "---\nstatus: {}\ncategory: productivity\n---\n\nbody\n```\n")
+        self.assertEqual(self.rsi_count({
+            "obsolete.md": split.format("obsolete"),
+            "open.md": split.format("pending"),
+        }), 1)
+
     def test_missing_status_stays_permissively_pending(self):
         self.assertEqual(self.rsi_count({"x.md": "---\ncategory: x\n---\n"}), 1)
 
