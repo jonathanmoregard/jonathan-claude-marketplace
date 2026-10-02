@@ -196,6 +196,39 @@ class TestPathResolution(HomeHarness):
         self.assertEqual(COUNTS.total_pending(), 0)
 
 
+class TestMalformedFrontmatter(HomeHarness):
+    """Hand-edited and gate-annotated proposals: the status line decides, wherever
+    the frontmatter's shape would trip a naive parser."""
+
+    def rsi_count(self, files):
+        self.write_config({})
+        rsi = os.path.join(self.path(SINK_REL), "rsi")
+        os.makedirs(rsi, exist_ok=True)
+        for name, body in files.items():
+            mode = "wb" if isinstance(body, bytes) else "w"
+            with open(os.path.join(rsi, name), mode) as f:
+                f.write(body)
+        return dict(COUNTS.count_all_subdirs())["rsi"]
+
+    def test_triple_dash_inside_a_gate_value_does_not_end_the_frontmatter(self):
+        body = ('---\ngate:\n  verdict: sharp\n  evidence: "diff --- a/x +++ b/x"\n'
+                "status: implemented\n---\nbody\n")
+        self.assertEqual(self.rsi_count({"a.md": body}), 0)
+
+    def test_utf8_bom_before_the_frontmatter_is_ignored(self):
+        self.assertEqual(self.rsi_count({
+            "done.md": "﻿---\nstatus: implemented\n---\n",
+            "open.md": "﻿---\nstatus: pending\n---\n",
+        }), 1)
+
+    def test_undecodable_bytes_still_count_as_pending(self):
+        body = b"---\nstatus: pending\ntitle: caf\xe9\n---\n"
+        self.assertEqual(self.rsi_count({"latin1.md": body}), 1)
+
+    def test_missing_status_stays_permissively_pending(self):
+        self.assertEqual(self.rsi_count({"x.md": "---\ncategory: x\n---\n"}), 1)
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: the UserPromptSubmit nudge
 # ---------------------------------------------------------------------------

@@ -129,6 +129,27 @@ def _iter_md_files(dir_path, excluded_files):
         yield fpath
 
 
+_FM_CLOSE_RE = re.compile(r"^---[ \t]*$", re.MULTILINE)
+
+
+def read_frontmatter(fpath, limit=2048):
+    """Frontmatter text of a proposal, or None when it has none (or it is
+    unterminated within `limit` chars). Tolerates a UTF-8 BOM and undecodable
+    bytes, and only a whole `---` line closes the block — a `---` inside a value
+    (e.g. a diff header quoted in gate evidence) does not. Raises OSError.
+    """
+    with open(fpath, encoding="utf-8", errors="replace") as f:
+        content = f.read(limit)
+    content = content.lstrip("\ufeff")
+    if not content.startswith("---"):
+        return None
+    nl = content.find("\n")
+    if nl == -1:
+        return None
+    m = _FM_CLOSE_RE.search(content, nl + 1)
+    return content[nl + 1:m.start()] if m else None
+
+
 def pending_status_aware(dir_path, pending_statuses, excluded_files):
     """RSI-style pending files: a file is pending if its frontmatter carries a
     status in pending_statuses OR carries no `status:` line at all. Permissive on
@@ -145,25 +166,16 @@ def pending_status_aware(dir_path, pending_statuses, excluded_files):
     pending = []
     for fpath in _iter_md_files(dir_path, excluded_files):
         try:
-            with open(fpath) as f:
-                content = f.read(2048)
-        except (IOError, OSError, UnicodeDecodeError):
+            frontmatter = read_frontmatter(fpath)
+        except (IOError, OSError):
             continue
-        if content.startswith("---"):
-            end = content.find("---", 3)
-            if end == -1:
-                # unterminated frontmatter — treat as pending (permissive)
-                pending.append(fpath)
-                continue
-            frontmatter = content[3:end]
-            if pending_re is None or pending_re.search(frontmatter):
-                pending.append(fpath)
-                continue
+        if frontmatter is None:
+            # no frontmatter, or unterminated — permissive
+            pending.append(fpath)
+        elif pending_re is None or pending_re.search(frontmatter):
+            pending.append(fpath)
+        elif not status_line_re.search(frontmatter):
             # frontmatter present but no `status:` line — permissive
-            if not status_line_re.search(frontmatter):
-                pending.append(fpath)
-        else:
-            # no frontmatter — permissive
             pending.append(fpath)
     return pending
 
@@ -249,12 +261,11 @@ def item_date(fpath):
         except ValueError:
             pass
     try:
-        with open(fpath) as f:
-            head = f.read(2048)
-        m = _DATE_FM_RE.search(head) if head.startswith("---") else None
+        fm = read_frontmatter(fpath)
+        m = _DATE_FM_RE.search(fm) if fm is not None else None
         if m:
             return date.fromisoformat(m.group(1))
-    except (IOError, OSError, ValueError, UnicodeDecodeError):
+    except (IOError, OSError, ValueError):
         pass
     try:
         return datetime.fromtimestamp(os.path.getmtime(fpath), timezone.utc).date()
