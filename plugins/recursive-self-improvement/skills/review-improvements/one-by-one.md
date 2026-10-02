@@ -9,10 +9,10 @@ The proposals folder aggregates work waiting for human review from multiple sour
 
 ```
 <proposals_folder>/                            # default: ~/.local/state/claude-proposals
-├── <rsi_subdir>/                              # default: rsi — status-aware (pending|open|missing)
-├── router/                                    # file-existence based
-├── clv2/                                      # file-existence based
-├── from-research/                             # file-existence based
+├── <rsi_subdir>/                              # default: rsi
+├── router/
+├── clv2/
+├── from-research/
 ├── <any_new_subdir>/                          # auto-discovered
 └── README.md                                  # excluded by filename pattern
 ```
@@ -48,7 +48,7 @@ Discover categories: list subdirs of the resolved `proposals.folder`, skipping t
 
 For each category, list pending files:
 - **rsi**: files whose frontmatter has `status: pending`, `status: open`, or no `status:` line (permissive — same rule as the SessionStart hook).
-- **non-rsi**: any `.md` file in the subdir top-level, excluding `README*` and dotfiles.
+- **non-rsi**: same status rule; a file with no frontmatter or no `status:` line counts as pending. Excludes `README*` and dotfiles.
 
 Also read the RSI observation stream (still used for the RSI Automated/Human track flow):
 - `~/.claude/recursive-self-improvement/observations/observations.jsonl`
@@ -225,7 +225,7 @@ If the frontmatter carries a `gate:` block (written by the proposal intake gate 
 Four options — implement / defer / reject / skip:
 
 - **implement**: iterate on a fix with the user, same discipline as the RSI Automated Track (show change, ask, apply, repeat). Then run the category's on-decision callback with decision `implemented` (Section 3.5 — BEFORE any archive move). Then archive the source file (`mv <path> <category>/archived/YYYY-MM-DD-<name>.md`, `mkdir -p` the archive dir first). Then commit + optionally push (same push flow as RSI decision records).
-- **defer**: run the callback with decision `deferred` (Section 3.5), then leave the file in place. Optionally add a `# DEFERRED YYYY-MM-DD: <reason>` line at the top of the file so it's obvious next session.
+- **defer**: run the callback with decision `deferred` (Section 3.5), then set `status: deferred` plus `resolution: "deferred YYYY-MM-DD: <reason>"` in the file's frontmatter (add a frontmatter block if it has none) and leave it in place. Add `revisit: YYYY-MM-DD` to have it count as pending again from that date. Never put a marker line above the opening `---`: it breaks frontmatter parsing and the item keeps counting as pending.
 - **reject**: run the callback with decision `rejected` (Section 3.5 — BEFORE the move), then `mv <path> <category>/archived/rejected/YYYY-MM-DD-<name>.md` (`mkdir -p` first). Optionally prepend a rejection note.
 - **skip**: no state change, no callback; item stays pending for next session.
 

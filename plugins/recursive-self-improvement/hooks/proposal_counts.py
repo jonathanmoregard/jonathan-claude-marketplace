@@ -10,12 +10,17 @@ Layout (all configurable via ~/.claude/recursive-self-improvement/config/config.
 under the `proposals` key):
 
     <proposals_folder>/            (default ~/.local/state/claude-proposals)
-    ├── <rsi_subdir>/              (default "rsi")  <-- status-aware (pending|open|missing)
-    ├── router/                    any subdir           <-- file-existence based
-    ├── clv2/                                            file-existence based
-    ├── from-research/                                   file-existence based
+    ├── <rsi_subdir>/              (default "rsi")
+    ├── router/                    any subdir
+    ├── clv2/
+    ├── from-research/
     ├── <any_new_subdir>/                                auto-discovered
     └── README.md                                        excluded by filename pattern
+
+Every category counts the same way: a file is pending when its frontmatter
+`status:` is in `pending_statuses`, or it has no frontmatter/status at all. Any
+other status (deferred, implemented, rejected, ...) drains it in place, until an
+optional `revisit: YYYY-MM-DD` date arrives.
 
 Adding a new proposal source = drop a subdir at the folder root; it shows up in the
 next nudge automatically. No plugin edit needed.
@@ -168,18 +173,42 @@ def read_frontmatter(fpath, limit=2048):
     return frontmatter
 
 
-def pending_status_aware(dir_path, pending_statuses, excluded_files):
-    """RSI-style pending files: a file is pending if its frontmatter carries a
-    status in pending_statuses OR carries no `status:` line at all. Permissive on
-    purpose — better to over-count and let the reviewer archive than to
-    under-count and silently drop work.
+_REVISIT_RE = re.compile(r"^revisit:\s*['\"]?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def _revisit_due(frontmatter, today):
+    """True when a `revisit: YYYY-MM-DD` key is present and that date has come."""
+    from datetime import date
+
+    m = _REVISIT_RE.search(frontmatter)
+    if not m:
+        return False
+    try:
+        return date.fromisoformat(m.group(1)) <= today
+    except ValueError:
+        return False
+
+
+def pending_status_aware(dir_path, pending_statuses, excluded_files, today=None):
+    """Pending files in one category. Same rule for every category:
+
+    - frontmatter `status:` in pending_statuses → pending;
+    - any other status (deferred, implemented, rejected, obsolete, ...) → not
+      pending, unless a `revisit:` date has arrived;
+    - no frontmatter, unterminated frontmatter, or no `status:` line → pending
+      (permissive: better to over-count and let the reviewer archive than to
+      silently drop work). For categories whose producers write no frontmatter (router, manual, ...)
+      this is the old "any file counts" default.
     """
+    from datetime import datetime, timezone
+
+    if today is None:
+        today = datetime.now(timezone.utc).date()
     if pending_statuses:
         alt = "|".join(re.escape(s) for s in pending_statuses)
         pending_re = re.compile(rf"^status:\s*(?:{alt})\s*$", re.MULTILINE)
     else:
         pending_re = None
-    status_line_re = re.compile(r"^status:\s*", re.MULTILINE)
 
     pending = []
     for fpath in _iter_md_files(dir_path, excluded_files):
@@ -187,25 +216,19 @@ def pending_status_aware(dir_path, pending_statuses, excluded_files):
             frontmatter = read_frontmatter(fpath)
         except (IOError, OSError):
             continue
-        if frontmatter is None:
-            # no frontmatter, or unterminated — permissive
-            pending.append(fpath)
-        elif pending_re is None or pending_re.search(frontmatter):
-            pending.append(fpath)
-        elif not status_line_re.search(frontmatter):
-            # frontmatter present but no `status:` line — permissive
+        if (
+            frontmatter is None
+            or pending_re is None
+            or pending_re.search(frontmatter)
+            or not _STATUS_LINE_RE.search(frontmatter)
+            or _revisit_due(frontmatter, today)
+        ):
             pending.append(fpath)
     return pending
 
 
 def count_status_aware(dir_path, pending_statuses, excluded_files):
     return len(pending_status_aware(dir_path, pending_statuses, excluded_files))
-
-
-def count_by_existence(dir_path, excluded_files):
-    """Non-RSI subdirs: any qualifying .md file counts as pending. Drain by moving to
-    archived/ or deleting."""
-    return sum(1 for _ in _iter_md_files(dir_path, excluded_files))
 
 
 def discover_subdirs(folder, excluded_subdirs):
@@ -248,10 +271,8 @@ def pending_files_all_subdirs():
     ordered = [rsi_sub] + [s for s in subdirs if s != rsi_sub]
     results = []
     for name in ordered:
-        if name == rsi_sub:
-            files = pending_status_aware(rsi_source, pending_statuses, excluded_files)
-        else:
-            files = list(_iter_md_files(os.path.join(folder, name), excluded_files))
+        src = rsi_source if name == rsi_sub else os.path.join(folder, name)
+        files = pending_status_aware(src, pending_statuses, excluded_files)
         results.append((name, files))
     return results
 

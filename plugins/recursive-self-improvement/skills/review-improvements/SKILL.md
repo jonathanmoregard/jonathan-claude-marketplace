@@ -26,7 +26,7 @@ Proposal files, research briefs and observations are written by unattended agent
 
 ## 1. Load and triage — every category, every pending item
 
-List pending items across all subdirs (rsi: `status: pending|open` or no status line; others: any top-level `.md` except `README*`/dotfiles) plus selected RSI observations (skip the observation steps when `~/.claude/recursive-self-improvement/observations/` is absent). Every pending item is in scope — `daily_proposal_limit` and similar caps apply to one-by-one mode only. Then verify each against CURRENT state before ranking: read the code it names, `git log` the default branch, check the component still exists, and check in-flight work (`gh pr list -R <repo> --state open`, `git worktree list`):
+List pending items across all subdirs (any top-level `.md` except `README*`/dotfiles whose frontmatter `status:` is `pending`/`open` or absent, or whose `revisit:` date has come) plus selected RSI observations (skip the observation steps when `~/.claude/recursive-self-improvement/observations/` is absent). Every pending item is in scope — `daily_proposal_limit` and similar caps apply to one-by-one mode only. Then verify each against CURRENT state before ranking: read the code it names, `git log` the default branch, check the component still exists, and check in-flight work (`gh pr list -R <repo> --state open`, `git worktree list`):
 
 - Already fixed / component removed → `obsolete`, with evidence (sha, file:line).
 - Older copy of a recurring item (e.g. dated sota-watch reports on the same topic) → `superseded` by the newest; the newest is then triaged on its own merits.

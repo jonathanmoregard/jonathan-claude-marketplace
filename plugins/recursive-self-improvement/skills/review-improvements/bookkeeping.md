@@ -6,14 +6,17 @@ Only the orchestrating session does bookkeeping. Subagents never edit, move or a
 
 As each outcome lands, record it on the proposal itself:
 
-| Outcome | rsi subdir (status-aware) | Other subdirs (existence-based) |
+| Outcome | rsi subdir | Other subdirs |
 |---|---|---|
 | PR opened / implemented | `status: implemented` + `resolution: "<date>: <repo>#<n> <one line>"` | callback `implemented`, then move to `<subdir>/archived/` |
 | Already fixed / component gone | `status: obsolete` + `resolution:` with the evidence (commit sha, file:line, date) | callback `rejected`, move to `<subdir>/archived/rejected/` |
 | Older duplicate of a newer item | `status: superseded` + `resolution: "superseded by <file>"` | archive the older copy |
 | Not worth doing | `status: rejected` + `resolution:` with the reason | callback `rejected`, archive |
 | One proposal split across PRs (e.g. a cross-repo pair) | leave pending until every part has a PR, then `status: implemented` + `resolution:` naming all PRs and their merge order | callback `implemented` once every part has a PR, then archive |
-| Needs the user (taste call, credential) | leave pending; add `resolution: "needs-user: <A/B recommendation>"` | leave in place with a `# DEFERRED` line |
+| Needs the user (taste call, credential) | leave pending; add `resolution: "needs-user: <A/B recommendation>"` | same, in frontmatter |
+| Deferred (the user parked it) | `status: deferred` + `resolution: "deferred <date>: <reason>"`, optional `revisit: YYYY-MM-DD` | callback `deferred`, then the same frontmatter; leave in place |
+
+Every category reads frontmatter `status:` — any non-pending status stops an item counting, until its `revisit:` date. Never mark state with a line above the opening `---`; it hides the frontmatter and the item counts as pending forever.
 
 Edit frontmatter and move files using **literal paths** (the full expanded path typed out). Guards refuse `sed -i`, `mv` and `>` on shell-variable paths; route around them with literal paths or the Write/Edit tools, never by quoting tricks. Insert the `resolution:` line right after `status:`. Afterwards check `^status:` appears exactly once in the file: a file whose gate block was written as a separate frontmatter reads as pending regardless of its real status — merge the two blocks.
 

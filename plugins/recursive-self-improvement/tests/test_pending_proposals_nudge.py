@@ -84,13 +84,15 @@ class HomeHarness(unittest.TestCase):
             json.dump(body, f)
         return cfg_path
 
-    def make_proposal(self, dir_path, name, status=None, date=None):
+    def make_proposal(self, dir_path, name, status=None, date=None, revisit=None):
         os.makedirs(dir_path, exist_ok=True)
         fm = "---\n"
         if status is not None:
             fm += f"status: {status}\n"
         if date is not None:
             fm += f"date: {date}\n"
+        if revisit is not None:
+            fm += f"revisit: {revisit}\n"
         fm += "---\n\nbody\n"
         with open(os.path.join(dir_path, name), "w") as f:
             f.write(fm)
@@ -194,6 +196,44 @@ class TestPathResolution(HomeHarness):
 
     def test_total_pending_is_zero_when_nothing_exists(self):
         self.assertEqual(COUNTS.total_pending(), 0)
+
+
+class TestNonPendingStatusInEveryCategory(HomeHarness):
+    """A resolved status in frontmatter drains an item in ANY category; files
+    without a status keep their category default (pending)."""
+
+    def setUp(self):
+        super().setUp()
+        self.write_config({})
+        self.manual = os.path.join(self.path(SINK_REL), "manual")
+
+    def test_deferred_and_resolved_statuses_drain_non_rsi_items(self):
+        for st in ("deferred", "implemented", "rejected", "obsolete",
+                   "superseded", "informational", "blocked"):
+            self.make_proposal(self.manual, f"{st}.md", status=st)
+        self.make_proposal(self.manual, "open.md", status="open")
+        self.make_proposal(self.manual, "nostatus.md")
+        with open(os.path.join(self.manual, "plain.md"), "w") as f:
+            f.write("no frontmatter at all\n")
+        self.assertEqual(dict(COUNTS.count_all_subdirs())["manual"], 3)
+
+    def test_deferred_drains_rsi_items_too(self):
+        rsi = os.path.join(self.path(SINK_REL), "rsi")
+        self.make_proposal(rsi, "d.md", status="deferred")
+        self.make_proposal(rsi, "p.md", status="pending")
+        self.assertEqual(dict(COUNTS.count_all_subdirs())["rsi"], 1)
+
+    def test_revisit_date_in_the_past_resurfaces_a_deferred_item(self):
+        self.make_proposal(self.manual, "due.md", status="deferred", revisit="2000-01-01")
+        self.make_proposal(self.manual, "later.md", status="deferred", revisit="2999-01-01")
+        self.assertEqual(dict(COUNTS.count_all_subdirs())["manual"], 1)
+
+    def test_deferred_old_items_do_not_trigger_the_user_notice(self):
+        self.make_proposal(self.manual, "2026-01-01-old.md", status="deferred")
+        r = self.run_hook(BANNER_PATH, stdin=json.dumps(
+            {"session_id": "t", "hook_event_name": "SessionStart", "source": "startup"}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "")
 
 
 class TestMalformedFrontmatter(HomeHarness):
