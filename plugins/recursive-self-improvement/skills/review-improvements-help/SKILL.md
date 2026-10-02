@@ -27,7 +27,7 @@ A daily Opus-powered agent reviews your Claude chat logs from the last 24 hours.
 ## Commands
 
 - `/setup-recursive-self-improvement` — choose categories, set goals and schedule
-- `/review-improvements` — walk through pending proposals interactively
+- `/review-improvements` — drain pending proposals: one by one, or all in parallel with independent verification
 - `/review-improvements-help` — this help text
 
 ## Configuration
