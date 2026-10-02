@@ -34,6 +34,7 @@ LEGACY_RSI_REL = ".claude/recursive-self-improvement/proposals"
 LEGACY_FOLDER_REL = ".claude/proposals"
 CONFIG_REL = ".claude/recursive-self-improvement/config/config.json"
 NUDGE_STATE_REL = ".local/state/claude/proposals-nudge.json"
+NOTICE_STATE_REL = ".local/state/claude/proposals-user-notice.json"
 
 
 def _load_counts():
@@ -83,11 +84,13 @@ class HomeHarness(unittest.TestCase):
             json.dump(body, f)
         return cfg_path
 
-    def make_proposal(self, dir_path, name, status=None):
+    def make_proposal(self, dir_path, name, status=None, date=None):
         os.makedirs(dir_path, exist_ok=True)
         fm = "---\n"
         if status is not None:
             fm += f"status: {status}\n"
+        if date is not None:
+            fm += f"date: {date}\n"
         fm += "---\n\nbody\n"
         with open(os.path.join(dir_path, name), "w") as f:
             f.write(fm)
@@ -117,12 +120,16 @@ class HomeHarness(unittest.TestCase):
         with open(p, "w") as f:
             f.write(payload if isinstance(payload, str) else json.dumps(payload))
 
-    def run_hook(self, script):
+    def run_hook(self, script, stdin=None, entrypoint="cli"):
         env = dict(os.environ)
         env["HOME"] = self.home
+        if entrypoint is None:
+            env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+        else:
+            env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
         return subprocess.run(
             [sys.executable, str(script)],
-            input='{"session_id":"t","hook_event_name":"UserPromptSubmit","prompt":"hi"}',
+            input=stdin or '{"session_id":"t","hook_event_name":"UserPromptSubmit","prompt":"hi"}',
             capture_output=True,
             text=True,
             timeout=30,
@@ -316,6 +323,109 @@ class TestSessionStartBanner(HomeHarness):
         result = self.run_hook(BANNER_PATH)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
+
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: the user-visible stale/large backlog notice (SessionStart)
+# ---------------------------------------------------------------------------
+
+SESSION_START_STDIN = json.dumps({
+    "session_id": "t", "hook_event_name": "SessionStart", "source": "startup",
+    "cwd": "/tmp", "transcript_path": "/tmp/t.jsonl",
+})
+
+
+def _days_ago(n):
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%d")
+
+
+class TestUserVisibleNotice(HomeHarness):
+    def start(self, entrypoint="cli"):
+        r = self.run_hook(BANNER_PATH, stdin=SESSION_START_STDIN, entrypoint=entrypoint)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout) if r.stdout.strip() else {}
+
+    def seed_rsi(self, ages_days):
+        rsi = os.path.join(self.path(SINK_REL), "rsi")
+        for i, age in enumerate(ages_days):
+            self.make_proposal(rsi, f"{_days_ago(age)}-item-{i}.md", status="pending")
+        return rsi
+
+    def test_stale_backlog_reaches_the_user_with_the_drain_command(self):
+        self.write_config({})
+        self.seed_rsi([30, 1])
+        msg = self.start().get("systemMessage")
+        self.assertIsNotNone(msg)
+        self.assertIn("2", msg)
+        self.assertIn("30 days", msg)
+        self.assertIn("/recursive-self-improvement:review-improvements", msg)
+
+    def test_large_but_fresh_backlog_also_notifies(self):
+        self.write_config({"notice_pending": 5})
+        self.seed_rsi([0] * 6)
+        self.assertIn("systemMessage", self.start())
+
+    def test_fresh_small_backlog_stays_quiet_for_the_user(self):
+        self.write_config({})
+        self.seed_rsi([1, 2])
+        out = self.start()
+        self.assertNotIn("systemMessage", out)
+        # model-facing banner is unchanged
+        self.assertIn("rsi 2", out["hookSpecificOutput"]["additionalContext"])
+
+    def test_drained_folder_is_silent(self):
+        self.write_config({})
+        rsi = os.path.join(self.path(SINK_REL), "rsi")
+        self.make_proposal(rsi, f"{_days_ago(90)}-old.md", status="implemented")
+        self.assertEqual(self.start(), {})
+
+    def test_at_most_once_per_day(self):
+        self.write_config({})
+        self.seed_rsi([30])
+        self.assertIn("systemMessage", self.start())
+        self.assertNotIn("systemMessage", self.start())
+        with open(self.path(NOTICE_STATE_REL)) as f:
+            self.assertEqual(json.load(f)["date"], _today_utc())
+
+    def test_fires_again_on_a_later_day(self):
+        self.write_config({})
+        self.seed_rsi([30])
+        p = self.path(NOTICE_STATE_REL)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            json.dump({"date": "2000-01-01"}, f)
+        self.assertIn("systemMessage", self.start())
+
+    def test_headless_sessions_neither_notify_nor_spend_the_daily_slot(self):
+        self.write_config({})
+        self.seed_rsi([30])
+        self.assertNotIn("systemMessage", self.start(entrypoint="sdk-cli"))
+        self.assertFalse(os.path.exists(self.path(NOTICE_STATE_REL)))
+        self.assertIn("systemMessage", self.start(entrypoint=None))
+
+    def test_age_falls_back_to_frontmatter_date_when_filename_has_none(self):
+        self.write_config({})
+        rsi = os.path.join(self.path(SINK_REL), "rsi")
+        self.make_proposal(rsi, "undated.md", status="pending", date=_days_ago(40))
+        self.assertIn("40 days", self.start().get("systemMessage", ""))
+
+    def test_non_rsi_categories_count_toward_age(self):
+        self.write_config({})
+        manual = os.path.join(self.path(SINK_REL), "manual")
+        self.make_proposal(manual, f"{_days_ago(20)}-idea.md")
+        self.assertIn("20 days", self.start().get("systemMessage", ""))
+
+    def test_unwritable_state_dir_never_errors_the_session(self):
+        self.write_config({})
+        self.seed_rsi([30])
+        blocker = self.path(".local/state/claude")
+        os.makedirs(os.path.dirname(blocker), exist_ok=True)
+        with open(blocker, "w") as f:
+            f.write("not a dir")
+        r = self.run_hook(BANNER_PATH, stdin=SESSION_START_STDIN)
+        self.assertEqual(r.returncode, 0)
 
 
 if __name__ == "__main__":

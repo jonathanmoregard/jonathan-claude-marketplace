@@ -53,6 +53,10 @@ DEFAULTS = {
     "pending_statuses": ["pending", "open"],
     "excluded_files": ["README*", ".*"],
     "excluded_subdirs": [".*", "archived"],
+    # User-visible SessionStart notice: shown when the oldest pending item is
+    # older than notice_age_days OR more than notice_pending items are pending.
+    "notice_age_days": 7,
+    "notice_pending": 20,
 }
 
 
@@ -125,11 +129,11 @@ def _iter_md_files(dir_path, excluded_files):
         yield fpath
 
 
-def count_status_aware(dir_path, pending_statuses, excluded_files):
-    """RSI-style count: a file is pending if its frontmatter carries a status in
-    pending_statuses OR carries no `status:` line at all. Permissive on purpose —
-    better to over-count and let the reviewer archive than to under-count and silently
-    drop work.
+def pending_status_aware(dir_path, pending_statuses, excluded_files):
+    """RSI-style pending files: a file is pending if its frontmatter carries a
+    status in pending_statuses OR carries no `status:` line at all. Permissive on
+    purpose — better to over-count and let the reviewer archive than to
+    under-count and silently drop work.
     """
     if pending_statuses:
         alt = "|".join(re.escape(s) for s in pending_statuses)
@@ -138,30 +142,34 @@ def count_status_aware(dir_path, pending_statuses, excluded_files):
         pending_re = None
     status_line_re = re.compile(r"^status:\s*", re.MULTILINE)
 
-    count = 0
+    pending = []
     for fpath in _iter_md_files(dir_path, excluded_files):
         try:
             with open(fpath) as f:
                 content = f.read(2048)
-        except (IOError, OSError):
+        except (IOError, OSError, UnicodeDecodeError):
             continue
         if content.startswith("---"):
             end = content.find("---", 3)
             if end == -1:
                 # unterminated frontmatter — treat as pending (permissive)
-                count += 1
+                pending.append(fpath)
                 continue
             frontmatter = content[3:end]
             if pending_re is None or pending_re.search(frontmatter):
-                count += 1
+                pending.append(fpath)
                 continue
             # frontmatter present but no `status:` line — permissive
             if not status_line_re.search(frontmatter):
-                count += 1
+                pending.append(fpath)
         else:
             # no frontmatter — permissive
-            count += 1
-    return count
+            pending.append(fpath)
+    return pending
+
+
+def count_status_aware(dir_path, pending_statuses, excluded_files):
+    return len(pending_status_aware(dir_path, pending_statuses, excluded_files))
 
 
 def count_by_existence(dir_path, excluded_files):
@@ -190,8 +198,8 @@ def discover_subdirs(folder, excluded_subdirs):
     return sorted(subdirs)
 
 
-def count_all_subdirs():
-    """Return list of (label, count) tuples, stable order with rsi first."""
+def pending_files_all_subdirs():
+    """Return list of (label, [pending file paths]), stable order with rsi first."""
     cfg = load_proposals_config()
     folder = resolve_folder(cfg)
     rsi_sub = cfg["rsi_subdir"]
@@ -211,11 +219,55 @@ def count_all_subdirs():
     results = []
     for name in ordered:
         if name == rsi_sub:
-            n = count_status_aware(rsi_source, pending_statuses, excluded_files)
+            files = pending_status_aware(rsi_source, pending_statuses, excluded_files)
         else:
-            n = count_by_existence(os.path.join(folder, name), excluded_files)
-        results.append((name, n))
+            files = list(_iter_md_files(os.path.join(folder, name), excluded_files))
+        results.append((name, files))
     return results
+
+
+def count_all_subdirs(pending=None):
+    """Return list of (label, count) tuples, stable order with rsi first."""
+    if pending is None:
+        pending = pending_files_all_subdirs()
+    return [(name, len(files)) for name, files in pending]
+
+
+_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_DATE_FM_RE = re.compile(r"^date:\s*['\"]?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def item_date(fpath):
+    """Creation date of a proposal: filename `YYYY-MM-DD-` prefix, else the
+    frontmatter `date:` line, else the file's mtime. None if all three fail."""
+    from datetime import date, datetime, timezone
+
+    m = _DATE_PREFIX_RE.match(os.path.basename(fpath))
+    if m:
+        try:
+            return date.fromisoformat(m.group(1))
+        except ValueError:
+            pass
+    try:
+        with open(fpath) as f:
+            head = f.read(2048)
+        m = _DATE_FM_RE.search(head) if head.startswith("---") else None
+        if m:
+            return date.fromisoformat(m.group(1))
+    except (IOError, OSError, ValueError, UnicodeDecodeError):
+        pass
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(fpath), timezone.utc).date()
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def oldest_pending_age_days(pending, today):
+    """Age in whole days of the oldest pending file across every category, or None."""
+    dates = [d for _, files in pending for d in map(item_date, files) if d]
+    if not dates:
+        return None
+    return max(0, (today - min(dates)).days)
 
 
 def total_pending(counts=None):
