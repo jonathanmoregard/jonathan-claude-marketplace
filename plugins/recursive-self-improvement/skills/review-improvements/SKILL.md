@@ -29,7 +29,7 @@ Proposal files, research briefs and observations are written by unattended agent
 List pending items across all subdirs (rsi: `status: pending|open` or no status line; others: any top-level `.md` except `README*`/dotfiles) plus selected RSI observations (skip the observation steps when `~/.claude/recursive-self-improvement/observations/` is absent). Every pending item is in scope — `daily_proposal_limit` and similar caps apply to one-by-one mode only. Then verify each against CURRENT state before ranking: read the code it names, `git log` the default branch, check the component still exists, and check in-flight work (`gh pr list -R <repo> --state open`, `git worktree list`):
 
 - Already fixed / component removed → `obsolete`, with evidence (sha, file:line).
-- Older copy of a recurring item (e.g. dated sota-watch reports on the same topic) → `superseded` by the newest.
+- Older copy of a recurring item (e.g. dated sota-watch reports on the same topic) → `superseded` by the newest; the newest is then triaged on its own merits.
 - Fix already in an open PR → no new cluster; `implemented` with `resolution:` naming the PR ("open, not merged"). Never open a duplicate.
 - Information-only item (a SOTA/landscape report with no concrete fix) → archive as intel: `rejected` with `resolution: "intel, no action"`; a concrete follow-up it suggests becomes its own cluster.
 - Inert backlog (e.g. permission prompts that keep firing on a deliberate rule) → bulk `rejected` via the on-decision callback.
@@ -48,7 +48,7 @@ Rank the survivors by bang-for-buck (impact on daily friction ÷ effort), highes
 - Several fixes touching the same file or component → one PR, or explicitly stacked. Never parallel PRs on the same file without coordination.
 - When parallel agents must touch the same file anyway, assign disjoint functions and tell each brief about the other (`SIBLINGS` line).
 - Security-sensitive changes (guards, permissions, secrets, tool-gating hooks) → their own PR, never inside "small fixes".
-- Low-risk unrelated small fixes in one repo → a "small fixes N" PR listing every proposal it closes.
+- Low-risk unrelated small fixes in one repo → a "small fixes N" PR listing every proposal it closes (N = next number not already used by an open PR or worktree).
 - Pre-existing unrelated test failures found on the default branch → their own small-fixes PR, not folded into a feature PR.
 - Every PR independently mergeable; dependencies stated in its body.
 
@@ -75,7 +75,8 @@ After the answer, ask nothing else that can be decided. Only genuine taste calls
 
 1. `~/.claude/push-proposals.sh`, then confirm with `git -C <proposals_folder> log -1 --stat`.
 2. Re-count pending; anything left is either needs-user (with A/B) or explicitly deferred.
-3. Final reply: one line per PR (repo#n — what — verification verdict, e.g. "VERIFIED" or "VERIFIED after fix <sha>"), then proposals resolved without a PR (obsolete / superseded / rejected counts), then needs-user items as A/B recommendations. PR URLs go at the bottom, one per line, only this drain's PRs. Last line: the state marker (`DONE` / `RUNNING` / `BLOCKED` / `QUESTION`).
+3. Learnings: append what this drain taught (failure modes verifiers caught, grouping conflicts, guard workarounds) to `~/.local/state/claude-tasks/<repo-name>/rsi-drain-learnings.md`. When one changes how a drain should run, fold it into this skill through the plugin repo's own worktree + PR flow (never the installed marketplace checkout) — dispatch it as one more cluster.
+4. Final reply: one line per PR (repo#n — what — verification verdict, e.g. "VERIFIED" or "VERIFIED after fix <sha>"), then proposals resolved without a PR (obsolete / superseded / rejected counts), then needs-user items as A/B recommendations. PR URLs go at the bottom, one per line, only this drain's PRs. Last line: the state marker (`DONE` / `RUNNING` / `BLOCKED` / `QUESTION`).
 
 ## Common mistakes
 
@@ -89,4 +90,4 @@ After the answer, ask nothing else that can be decided. Only genuine taste calls
 | `mv`/`sed -i`/`>` on `$VAR` paths | Literal paths or the Write/Edit tools |
 | `gh pr create --base …` | Omit the flag; the default branch is automatic |
 | Commit and push in one compound command | Separate calls; a denied compound runs nothing |
-| Overwriting the mission file from memory | Read it, then edit |
+| Overwriting the mission file from memory | Read it, then edit; a clobbered file can be restored from `~/.claude/file-history/` |

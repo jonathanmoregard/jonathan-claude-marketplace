@@ -12,6 +12,7 @@ As each outcome lands, record it on the proposal itself:
 | Already fixed / component gone | `status: obsolete` + `resolution:` with the evidence (commit sha, file:line, date) | callback `rejected`, move to `<subdir>/archived/rejected/` |
 | Older duplicate of a newer item | `status: superseded` + `resolution: "superseded by <file>"` | archive the older copy |
 | Not worth doing | `status: rejected` + `resolution:` with the reason | callback `rejected`, archive |
+| One proposal split across PRs (e.g. a cross-repo pair) | leave pending until every part has a PR, then `status: implemented` + `resolution:` naming all PRs and their merge order | callback `implemented` once every part has a PR, then archive |
 | Needs the user (taste call, credential) | leave pending; add `resolution: "needs-user: <A/B recommendation>"` | leave in place with a `# DEFERRED` line |
 
 Edit frontmatter and move files using **literal paths** (the full expanded path typed out). Guards refuse `sed -i`, `mv` and `>` on shell-variable paths; route around them with literal paths or the Write/Edit tools, never by quoting tricks. Insert the `resolution:` line right after `status:`. Afterwards check `^status:` appears exactly once in the file: a file whose gate block was written as a separate frontmatter reads as pending regardless of its real status — merge the two blocks.
