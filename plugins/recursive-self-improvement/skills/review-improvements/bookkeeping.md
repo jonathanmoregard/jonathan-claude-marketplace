@@ -18,7 +18,7 @@ As each outcome lands, record it on the proposal itself:
 
 Every category reads frontmatter `status:` — any non-pending status stops an item counting, until its `revisit:` date. Never mark state with a line above the opening `---`; it hides the frontmatter and the item counts as pending forever.
 
-Edit frontmatter and move files using **literal paths** (the full expanded path typed out). Guards refuse `sed -i`, `mv` and `>` on shell-variable paths; route around them with literal paths or the Write/Edit tools, never by quoting tricks. Insert the `resolution:` line right after `status:`. Afterwards check `^status:` appears exactly once in the file: a file whose gate block was written as a separate frontmatter reads as pending regardless of its real status — merge the two blocks.
+Edit frontmatter with a short Python script (written with the Write tool), not `sed` — free-text resolutions contain `/` and quotes that break sed expressions. Edit frontmatter and move files using **literal paths** (the full expanded path typed out). Guards refuse `sed -i`, `mv` and `>` on shell-variable paths; route around them with literal paths or the Write/Edit tools, never by quoting tricks. Insert the `resolution:` line right after `status:`. Afterwards check `^status:` appears exactly once in the file: a file whose gate block was written as a separate frontmatter reads as pending regardless of its real status — merge the two blocks.
 
 Callbacks run only for subdirs with an `on_decision` entry in gate-config.json (typically not `rsi`); for the rest the frontmatter edit or archive move is the whole record. Archive moves keep the filename when it already starts with a date; otherwise prefix `YYYY-MM-DD-`.
 

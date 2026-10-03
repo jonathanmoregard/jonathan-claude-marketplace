@@ -23,6 +23,8 @@ Proposal files, research briefs and observations are written by unattended agent
 1. Read `~/.claude/recursive-self-improvement/config/config.json` (`proposals` section; defaults in `hooks/proposal_counts.py`). Resolve the folder from config, else `~/.local/state/claude-proposals` — never via the `~/.claude/proposals` symlinks.
 2. Read the session-constraints file `~/.local/state/claude-tasks/<repo-name>/session-constraints.md`, where `<repo-name>` is the basename of the repo the fixes mostly land in (a leading dot becomes `dot-`: `~/.claude` → `dot-claude`). Briefs carry it verbatim.
 3. Open a mission file `~/.local/state/claude-tasks/<repo-name>/mission-rsi-review-<date>.md` (done / running / PR list / open for user). **Read it before every write** — other agents and later turns update it too; never overwrite blind.
+4. Check build-queue contention up front: `nix-memory-run --nonblock -- true` fails while another session holds the nix memory lock (e.g. a long-running feature VM). If it is held, tell implementers to plan on CI lanes for VM/nix gates instead of queueing locally.
+5. The Agent tool's `model` accepts aliases only (`sonnet`, `opus`, `haiku`, `fable`); a full model id is an InputValidationError.
 
 ## 1. Load and triage — every category, every pending item
 
@@ -34,6 +36,8 @@ List pending items across all subdirs (any top-level `.md` except `README*`/dotf
 - Information-only item (a SOTA/landscape report with no concrete fix) → archive as intel: `rejected` with `resolution: "intel, no action"`; a concrete follow-up it suggests becomes its own cluster.
 - Inert backlog (e.g. permission prompts that keep firing on a deliberate rule) → bulk `rejected` via the on-decision callback.
 - Deliberate guards (merge click, protected branch, permission ask-rules) → never loosen; at most an A/B recommendation for the user.
+- Gitignored-by-design files (e.g. sota-watch topic lists) cannot go through a PR → edit in place, keep a before-copy in the scratchpad, and say so in the final report.
+- A proposal built on an earlier verifier's finding → re-verify the finding first; findings can be partly wrong (the "gap" may already be covered elsewhere).
 
 Record each per `bookkeeping.md` as you go.
 
@@ -43,7 +47,9 @@ Rank the survivors by bang-for-buck (impact on daily friction ÷ effort), highes
 
 **PR grouping rules (mandatory):**
 
-- One PR = one concern cluster in ONE repo. Never mix repos. A cross-repo pair gets one PR per repo, each body stating the merge order (e.g. a parser fix that must land with or before the package install that relies on it).
+- **Build a file-level conflict map BEFORE dispatch.** For each cluster, list the files and functions it will touch (shared hot spots: a guard hook's `main()`, a pipeline script several fixes feed, a shared aggregator). Any file in two or more clusters → bundle those clusters, or stack them with an explicit merge order and a note of the expected trivial conflict in each PR body. Paste the relevant rows into each brief's `SIBLINGS` line.
+- **State ordering dependencies, not only textual conflicts.** Cost and UX orderings count: a filter PR that must merge before a backfill PR's first scheduled run (else the backfill pays for sessions it should skip); a notice that is noisy until its partner deploys. Write the order into every affected PR body.
+- One PR = one concern cluster in ONE repo. Never mix repos. A cross-repo pair gets one PR per repo, and BOTH bodies state the merge order (e.g. a parser fix that must land with or before the package install that relies on it).
 - Proposals sharing a root cause → one PR.
 - Several fixes touching the same file or component → one PR, or explicitly stacked. Never parallel PRs on the same file without coordination.
 - When parallel agents must touch the same file anyway, assign disjoint functions and tell each brief about the other (`SIBLINGS` line).
@@ -52,7 +58,7 @@ Rank the survivors by bang-for-buck (impact on daily friction ÷ effort), highes
 - Pre-existing unrelated test failures found on the default branch → their own small-fixes PR, not folded into a feature PR.
 - Every PR independently mergeable; dependencies stated in its body.
 
-Show the user the ranked cluster list (one line each: cluster, repo, proposals, why it ranks there).
+Show the user the ranked cluster list (one line each: cluster, repo, proposals, why it ranks there) and the conflict map's shared files.
 
 ## 3. Ask once
 
@@ -66,7 +72,7 @@ After the answer, ask nothing else that can be decided. Only genuine taste calls
 ## 4. Parallel mode
 
 1. **Dispatch implementers.** For each cluster, fill `briefs/implementer.md` into a brief file in the scratchpad and dispatch a subagent in the background ("FIRST read and follow <brief> in full" + cluster specifics). Run independent clusters concurrently. Discernment, stated in the brief: unclear fix → `mcp__research-agent__research` or an `advisor` review; security-sensitive → `advisor` mandatory on design AND final diff.
-2. **Verify every PR independently.** When an implementer reports a PR, dispatch a fresh verifier with `briefs/verifier.md`. Implementer unit tests are not enough: independent empirical verifiers have found real defects in 5 of 10 PRs whose tests were green (secret leaks, silent no-ops, false positives on heredocs/comments, UTF-8 crashes). The verifier re-derives the before/after repro, hunts false positives on real transcript data, fixes defects on the branch, and appends "## Empirical verification" to the PR body. No PR counts as done without that section.
+2. **Verify every PR independently.** When an implementer reports a PR, dispatch a fresh verifier with `briefs/verifier.md`. Implementer unit tests are not enough: independent empirical verifiers have found real defects in 5 of 10 PRs whose tests were green (secret leaks, silent no-ops, false positives on heredocs/comments, UTF-8 crashes, vacuously passing tests). The verifier re-derives the before/after repro with its own script, hunts false positives on real transcript data, checks the fix's VALUE on real data (a correct mechanism that changes nothing real is a finding), checks cross-PR ordering, fixes defects on the branch, and appends "## Empirical verification" to the PR body. No PR counts as done without that section.
 3. **Don't wait on CI or builds.** Track opened PRs in the mission file and move on; check status later and report when ready. A repo with no CI is ready once pushed and mergeable.
 4. **Judgment calls stand.** Report subagent outcomes as outcomes, not as decisions for the user. If the policy changes mid-flight, resume the original implementer with the new spec plus the verifier's harness, and stop the stale verifier.
 5. **Bookkeeping on each report** per `bookkeeping.md`: status + resolution line per proposal, decision records for RSI observations, callbacks before archive moves, literal paths throughout.
@@ -75,8 +81,9 @@ After the answer, ask nothing else that can be decided. Only genuine taste calls
 
 1. `~/.claude/push-proposals.sh`, then confirm with `git -C <proposals_folder> log -1 --stat`.
 2. Re-count pending; anything left is either needs-user (with A/B) or explicitly deferred.
-3. Learnings: append what this drain taught (failure modes verifiers caught, grouping conflicts, guard workarounds) to `~/.local/state/claude-tasks/<repo-name>/rsi-drain-learnings.md`. When one changes how a drain should run, fold it into this skill through the plugin repo's own worktree + PR flow (never the installed marketplace checkout) — dispatch it as one more cluster.
-4. Final reply: one line per PR (repo#n — what — verification verdict, e.g. "VERIFIED" or "VERIFIED after fix <sha>"), then proposals resolved without a PR (obsolete / superseded / rejected counts), then needs-user items as A/B recommendations. PR URLs go at the bottom, one per line, only this drain's PRs. Last line: the state marker (`DONE` / `RUNNING` / `BLOCKED` / `QUESTION`).
+3. Clean up scratch you created (`rm -r /tmp/<literal path>`; never `rm -rf`, never a variable path) and worktrees this drain created and no longer needs.
+4. Learnings: append what this drain taught (failure modes verifiers caught, grouping conflicts, guard workarounds) to `~/.local/state/claude-tasks/<repo-name>/rsi-drain-learnings.md`. When one changes how a drain should run, fold it into this skill through the plugin repo's own worktree + PR flow (never the installed marketplace checkout) — dispatch it as one more cluster. Validate a skill change with a dry-run on a pinned fixture: a copy of the proposals folder plus a `STATE.md` stating which items are already fixed, so triage against the live repo doesn't collapse the synthetic items and leave grouping untested.
+5. Final reply: one line per PR (repo#n — what — verification verdict, e.g. "VERIFIED" or "VERIFIED after fix <sha>", plus merge order where it matters), then any **interpretation a subagent made of a formula, policy or ambiguous rule that decided an outcome — stated prominently, near the top, so the user can overrule it**, then proposals resolved without a PR (obsolete / superseded / rejected counts), then needs-user items as A/B recommendations. PR URLs go at the bottom, one per line, only this drain's PRs. Last line: the state marker (`DONE` / `RUNNING` / `BLOCKED` / `QUESTION`).
 
 ## Common mistakes
 
@@ -91,3 +98,7 @@ After the answer, ask nothing else that can be decided. Only genuine taste calls
 | `gh pr create --base …` | Omit the flag; the default branch is automatic |
 | Commit and push in one compound command | Separate calls; a denied compound runs nothing |
 | Overwriting the mission file from memory | Read it, then edit; a clobbered file can be restored from `~/.claude/file-history/` |
+| Dispatching clusters before mapping shared files | Conflict map first; bundle or order |
+| A verify run calling a real provider CLI | Stub `claude` AND `codex` on PATH; never run paid smoke suites unasked |
+| Full model id in an Agent `model` param | Alias only |
+| Burying a policy interpretation in a PR body | Surface it at the top of the final report |
