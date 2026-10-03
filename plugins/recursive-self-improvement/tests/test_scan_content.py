@@ -22,8 +22,12 @@ import sys
 data = sys.stdin.read()
 with open({seen!r}, "w") as f:
     f.write(data)
+sys.stdout.buffer.write({out!r})
+sys.stderr.buffer.write({err!r})
 sys.exit({rc})
 """
+
+VERDICT = b"WARNING: Prompt injection detected (score=0.99, window 1 of 1).\n"
 
 
 class ScanContentContract(unittest.TestCase):
@@ -34,10 +38,12 @@ class ScanContentContract(unittest.TestCase):
         os.makedirs(self.bin)
         self.seen = os.path.join(self.tmp, "seen.txt")
 
-    def stub(self, rc):
+    def stub(self, rc, out=b"", err=None):
+        if err is None:
+            err = VERDICT if rc == 1 else b""
         path = os.path.join(self.bin, "prompt-injection-scan")
         with open(path, "w") as f:
-            f.write(STUB.format(python=sys.executable, seen=self.seen, rc=rc))
+            f.write(STUB.format(python=sys.executable, seen=self.seen, rc=rc, out=out, err=err))
         os.chmod(path, 0o755)
 
     def run_scan(self, *args, stdin=None):
@@ -79,6 +85,25 @@ class ScanContentContract(unittest.TestCase):
                 self.stub(rc)
                 proc = self.run_scan("--text", "some tool argument")
                 self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_exit_1_without_a_verdict_is_unscanned(self):
+        # Exit 1 is also what a crashing interpreter or a native library
+        # giving up (OpenBLAS under a memory limit) returns. Only an exit 1
+        # that carries the classifier's verdict line counts as "injection".
+        self.stub(1, err=b"OpenBLAS error: Memory allocation still failed\n")
+        proc = self.run_scan("--text", "some tool argument")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_undecodable_classifier_output_is_never_a_verdict(self):
+        for rc, want in ((5, 2), (1, 1)):
+            with self.subTest(rc=rc):
+                self.stub(rc, out=b"\xe1\xff garbage \x00", err=(VERDICT if rc == 1 else b"\xfe\xfd"))
+                proc = self.run_scan("--text", "some tool argument")
+                self.assertEqual(proc.returncode, want, proc.stderr)
+
+    def test_unreadable_input_file_is_unscanned(self):
+        proc = self.run_scan("--file", os.path.join(self.tmp, "missing.txt"))
+        self.assertEqual(proc.returncode, 2, proc.stderr)
 
     def test_no_scanner_available_is_unscanned(self):
         proc = self.run_scan("--text", "some tool argument")
