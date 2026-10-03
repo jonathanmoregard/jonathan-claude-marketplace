@@ -10,12 +10,17 @@ Layout (all configurable via ~/.claude/recursive-self-improvement/config/config.
 under the `proposals` key):
 
     <proposals_folder>/            (default ~/.local/state/claude-proposals)
-    ├── <rsi_subdir>/              (default "rsi")  <-- status-aware (pending|open|missing)
-    ├── router/                    any subdir           <-- file-existence based
-    ├── clv2/                                            file-existence based
-    ├── from-research/                                   file-existence based
+    ├── <rsi_subdir>/              (default "rsi")
+    ├── router/                    any subdir
+    ├── clv2/
+    ├── from-research/
     ├── <any_new_subdir>/                                auto-discovered
     └── README.md                                        excluded by filename pattern
+
+Every category counts the same way: a file is pending when its frontmatter
+`status:` is in `pending_statuses`, or it has no frontmatter/status at all. Any
+other status (deferred, implemented, rejected, ...) drains it in place, until an
+optional `revisit: YYYY-MM-DD` date arrives.
 
 Adding a new proposal source = drop a subdir at the folder root; it shows up in the
 next nudge automatically. No plugin edit needed.
@@ -53,6 +58,10 @@ DEFAULTS = {
     "pending_statuses": ["pending", "open"],
     "excluded_files": ["README*", ".*"],
     "excluded_subdirs": [".*", "archived"],
+    # User-visible SessionStart notice: shown when the oldest pending item is
+    # older than notice_age_days OR more than notice_pending items are pending.
+    "notice_age_days": 7,
+    "notice_pending": 20,
 }
 
 
@@ -125,49 +134,101 @@ def _iter_md_files(dir_path, excluded_files):
         yield fpath
 
 
-def count_status_aware(dir_path, pending_statuses, excluded_files):
-    """RSI-style count: a file is pending if its frontmatter carries a status in
-    pending_statuses OR carries no `status:` line at all. Permissive on purpose —
-    better to over-count and let the reviewer archive than to under-count and silently
-    drop work.
+_FM_CLOSE_RE = re.compile(r"^---[ \t]*$", re.MULTILINE)
+_STATUS_LINE_RE = re.compile(r"^status:\s*", re.MULTILINE)
+
+
+def read_frontmatter(fpath, limit=2048):
+    """Frontmatter text of a proposal, or None when it has none (or it is
+    unterminated within `limit` chars). Tolerates a UTF-8 BOM and undecodable
+    bytes, and only a whole `---` line closes the block — a `---` inside a value
+    (e.g. a diff header quoted in gate evidence) does not. Raises OSError.
     """
+    with open(fpath, encoding="utf-8", errors="replace") as f:
+        content = f.read(limit)
+    content = content.lstrip("\ufeff")
+    if not content.startswith("---"):
+        return None
+    nl = content.find("\n")
+    if nl == -1:
+        return None
+    m = _FM_CLOSE_RE.search(content, nl + 1)
+    if not m:
+        return None
+    frontmatter = content[nl + 1:m.start()]
+    if not _STATUS_LINE_RE.search(frontmatter):
+        # The intake gate prepends its own block to a file that does not start
+        # with `---` (e.g. one wrapped in a code fence); the real frontmatter
+        # then follows, after blank or fence lines. Read it as one block.
+        pos = m.end()
+        lines = content[pos:].split("\n")
+        i = 1  # lines[0] is the remainder of the closing `---` line
+        while i < len(lines) and (not lines[i].strip() or lines[i].startswith("```")):
+            i += 1
+        if i < len(lines) and lines[i].rstrip() == "---":
+            start = pos + sum(len(x) + 1 for x in lines[:i + 1])
+            m2 = _FM_CLOSE_RE.search(content, start)
+            if m2:
+                frontmatter += content[start:m2.start()]
+    return frontmatter
+
+
+_REVISIT_RE = re.compile(r"^revisit:\s*['\"]?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def _revisit_due(frontmatter, today):
+    """True when a `revisit: YYYY-MM-DD` key is present and that date has come."""
+    from datetime import date
+
+    m = _REVISIT_RE.search(frontmatter)
+    if not m:
+        return False
+    try:
+        return date.fromisoformat(m.group(1)) <= today
+    except ValueError:
+        return False
+
+
+def pending_status_aware(dir_path, pending_statuses, excluded_files, today=None):
+    """Pending files in one category. Same rule for every category:
+
+    - frontmatter `status:` in pending_statuses → pending;
+    - any other status (deferred, implemented, rejected, obsolete, ...) → not
+      pending, unless a `revisit:` date has arrived;
+    - no frontmatter, unterminated frontmatter, or no `status:` line → pending
+      (permissive: better to over-count and let the reviewer archive than to
+      silently drop work). For categories whose producers write no frontmatter (router, manual, ...)
+      this is the old "any file counts" default.
+    """
+    from datetime import datetime, timezone
+
+    if today is None:
+        today = datetime.now(timezone.utc).date()
     if pending_statuses:
         alt = "|".join(re.escape(s) for s in pending_statuses)
         pending_re = re.compile(rf"^status:\s*(?:{alt})\s*$", re.MULTILINE)
     else:
         pending_re = None
-    status_line_re = re.compile(r"^status:\s*", re.MULTILINE)
 
-    count = 0
+    pending = []
     for fpath in _iter_md_files(dir_path, excluded_files):
         try:
-            with open(fpath) as f:
-                content = f.read(2048)
+            frontmatter = read_frontmatter(fpath)
         except (IOError, OSError):
             continue
-        if content.startswith("---"):
-            end = content.find("---", 3)
-            if end == -1:
-                # unterminated frontmatter — treat as pending (permissive)
-                count += 1
-                continue
-            frontmatter = content[3:end]
-            if pending_re is None or pending_re.search(frontmatter):
-                count += 1
-                continue
-            # frontmatter present but no `status:` line — permissive
-            if not status_line_re.search(frontmatter):
-                count += 1
-        else:
-            # no frontmatter — permissive
-            count += 1
-    return count
+        if (
+            frontmatter is None
+            or pending_re is None
+            or pending_re.search(frontmatter)
+            or not _STATUS_LINE_RE.search(frontmatter)
+            or _revisit_due(frontmatter, today)
+        ):
+            pending.append(fpath)
+    return pending
 
 
-def count_by_existence(dir_path, excluded_files):
-    """Non-RSI subdirs: any qualifying .md file counts as pending. Drain by moving to
-    archived/ or deleting."""
-    return sum(1 for _ in _iter_md_files(dir_path, excluded_files))
+def count_status_aware(dir_path, pending_statuses, excluded_files):
+    return len(pending_status_aware(dir_path, pending_statuses, excluded_files))
 
 
 def discover_subdirs(folder, excluded_subdirs):
@@ -190,8 +251,8 @@ def discover_subdirs(folder, excluded_subdirs):
     return sorted(subdirs)
 
 
-def count_all_subdirs():
-    """Return list of (label, count) tuples, stable order with rsi first."""
+def pending_files_all_subdirs():
+    """Return list of (label, [pending file paths]), stable order with rsi first."""
     cfg = load_proposals_config()
     folder = resolve_folder(cfg)
     rsi_sub = cfg["rsi_subdir"]
@@ -210,12 +271,53 @@ def count_all_subdirs():
     ordered = [rsi_sub] + [s for s in subdirs if s != rsi_sub]
     results = []
     for name in ordered:
-        if name == rsi_sub:
-            n = count_status_aware(rsi_source, pending_statuses, excluded_files)
-        else:
-            n = count_by_existence(os.path.join(folder, name), excluded_files)
-        results.append((name, n))
+        src = rsi_source if name == rsi_sub else os.path.join(folder, name)
+        files = pending_status_aware(src, pending_statuses, excluded_files)
+        results.append((name, files))
     return results
+
+
+def count_all_subdirs(pending=None):
+    """Return list of (label, count) tuples, stable order with rsi first."""
+    if pending is None:
+        pending = pending_files_all_subdirs()
+    return [(name, len(files)) for name, files in pending]
+
+
+_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_DATE_FM_RE = re.compile(r"^date:\s*['\"]?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def item_date(fpath):
+    """Creation date of a proposal: filename `YYYY-MM-DD-` prefix, else the
+    frontmatter `date:` line, else the file's mtime. None if all three fail."""
+    from datetime import date, datetime, timezone
+
+    m = _DATE_PREFIX_RE.match(os.path.basename(fpath))
+    if m:
+        try:
+            return date.fromisoformat(m.group(1))
+        except ValueError:
+            pass
+    try:
+        fm = read_frontmatter(fpath)
+        m = _DATE_FM_RE.search(fm) if fm is not None else None
+        if m:
+            return date.fromisoformat(m.group(1))
+    except (IOError, OSError, ValueError):
+        pass
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(fpath), timezone.utc).date()
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def oldest_pending_age_days(pending, today):
+    """Age in whole days of the oldest pending file across every category, or None."""
+    dates = [d for _, files in pending for d in map(item_date, files) if d]
+    if not dates:
+        return None
+    return max(0, (today - min(dates)).days)
 
 
 def total_pending(counts=None):
