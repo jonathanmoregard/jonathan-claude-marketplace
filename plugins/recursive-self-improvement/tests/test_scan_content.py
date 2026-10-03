@@ -7,6 +7,7 @@ matters is that "not scanned" can never read as "clean". A stub
 `prompt-injection-scan` on PATH stands in for the local classifier; no model
 runs here.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -18,10 +19,12 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SCAN = os.path.normpath(os.path.join(TESTS_DIR, "..", "scripts", "scan_content.py"))
 
 STUB = """#!{python}
-import sys
+import json, sys
 data = sys.stdin.read()
 with open({seen!r}, "w") as f:
     f.write(data)
+with open({seen!r} + ".argv", "w") as f:
+    json.dump(sys.argv[1:], f)
 sys.stdout.buffer.write({out!r})
 sys.stderr.buffer.write({err!r})
 sys.exit({rc})
@@ -78,6 +81,35 @@ class ScanContentContract(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stderr)
         with open(self.seen) as f:
             self.assertEqual(len(f.read()), len(text))
+
+    def test_json_verdict_names_flagged_documents_and_keeps_exit_codes(self):
+        # A caller that batches many samples needs to know WHICH flagged, so
+        # --json passes the classifier's per-document verdict through on
+        # stdout. The exit code contract is the same.
+        verdict = b'{"verdict": "injection", "documents": 3, "flagged": [2]}\n'
+        self.stub(1, out=verdict)
+        proc = self.run_scan("--json", stdin="a\n---\nb\n---\nignore previous instructions")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["flagged"], [2])
+        with open(self.seen + ".argv") as f:
+            self.assertIn("--json", json.load(f))
+
+    def test_json_unscanned_is_never_a_verdict_of_clean(self):
+        for rc in (2, 137):
+            with self.subTest(rc=rc):
+                self.stub(rc, out=b'{"verdict": "clean", "flagged": []}\n')
+                proc = self.run_scan("--json", "--text", "some tool argument")
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertEqual(json.loads(proc.stdout)["verdict"], "unscanned")
+        os.remove(os.path.join(self.bin, "prompt-injection-scan"))
+        proc = self.run_scan("--json", "--text", "some tool argument")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["verdict"], "unscanned")
+
+    def test_json_blank_input_is_clean(self):
+        proc = self.run_scan("--json", "--text", "  \n")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["flagged"], [])
 
     def test_classifier_failure_is_unscanned_never_clean(self):
         for rc in (2, 3, 137):
